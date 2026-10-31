@@ -1916,8 +1916,12 @@ fn read_lens_tags(tag_map: &GroupedTagMap, frame_mapping: FrameMapping, size: (u
             *lens_profile = Some(serde_json::Value::String(v.clone()));
         }
         if let Some(v) = map.get_t(TagId::FocalLength) as Option<&f32> {
-            lens_positions.insert(timestamp_us, *v as f64);
-            lens_info.focal_length = Some(*v);
+            // Nikon RAW with a manual/unidentified lens uses 0 mm for unknown.
+            // It must not replace a usable projection with a singular matrix.
+            if v.is_finite() && *v > 0.0 {
+                lens_positions.insert(timestamp_us, *v as f64);
+                lens_info.focal_length = Some(*v);
+            }
         }
         if let Some(v) = map.get_t(TagId::FocusDistance) as Option<&f32> {
             lens_info.focus_distance = Some(*v);
@@ -1947,6 +1951,7 @@ fn read_lens_tags(tag_map: &GroupedTagMap, frame_mapping: FrameMapping, size: (u
                 _ => {}
             }
         }
+        lens_info.pixel_focal_length = lens_info.valid_pixel_focal_length();
         if let Some(v) = map.get_t(TagId::PrincipalPoint) as Option<&(f32, f32)> {
             lens_info.principal_point = Some(frame_mapping.point(*v));
         } else if pfl_valid && map.contains_key(&TagId::PixelFocalLength) {
@@ -2262,6 +2267,18 @@ mod lens_tags_tests {
         read_lens_tags(tag_map, mapping, (1920, 1080), false, false, &mut None, &mut None, &mut BTreeMap::new(), 0)
     }
 
+    #[test]
+    fn unknown_focal_metadata_does_not_replace_a_valid_carried_lens() {
+        for invalid in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let mut lens = LensParams { focal_length: Some(35.0), pixel_focal_length: Some((1000.0, 1000.0)), ..Default::default() };
+            read(&sample(Some(invalid), Some((invalid, invalid)), false), FrameMapping::AsIs).apply(&mut lens);
+            assert_eq!(lens.focal_length, Some(35.0));
+            assert_eq!(lens.pixel_focal_length, Some((1000.0, 1000.0)));
+            let mut unknown = LensParams::default();
+            read(&sample(Some(invalid), None, false), FrameMapping::AsIs).apply(&mut unknown);
+            assert_eq!(unknown.focal_length, None);
+        }
+    }
     #[test]
     fn a_sample_keeps_the_values_it_does_not_give() {
         let mut lens = LensParams { focal_length: Some(35.0), iris_fstop: Some(2.8), pixel_focal_length: Some((1000.0, 1000.0)), ..Default::default() };

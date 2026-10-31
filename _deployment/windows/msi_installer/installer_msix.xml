@@ -104,7 +104,7 @@
 
     <PackageInformation
         PackageName="xyz.gyroflow"
-        PackageDisplayName="Gyroflow"
+        PackageDisplayName="Gryoflow (Omni)"
         p4:PackageDescription="Video stabilization using gyroscope data"
         PublisherName="CN=Adrian Ross"
         PublisherDisplayName="Adrian Ross"
@@ -125,7 +125,7 @@
             <Application
                 Id="Gyroflow"
                 Description="Video stabilization using gyroscope data"
-                DisplayName="Gyroflow"
+                DisplayName="Gryoflow (Omni)"
                 ExecutableName="Gyroflow.exe"/>
         </Applications>
 

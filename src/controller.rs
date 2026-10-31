@@ -323,6 +323,7 @@ pub struct Controller {
 
     // ---------- REDline conversion ----------
     find_redline: qt_method!(fn(&self) -> QString),
+    is_nikon_raw_video: qt_method!(fn(&self, url: QUrl) -> bool),
     // ---------- REDline conversion ----------
 
     play_sound: qt_method!(fn(&mut self, typ: String)),
@@ -423,7 +424,7 @@ impl Controller {
             custom_decoder = format!("BRAW:gpu={}{}", gpu, options);
         }
         if filename.to_ascii_lowercase().ends_with("r3d") || filename.to_ascii_lowercase().ends_with("nev") {
-            custom_decoder = format!("R3D:gpu=auto{}", options);
+            custom_decoder = core::raw_video::red_decoder(self.stabilizer.gpu_decoding.load(SeqCst), &options);
         }
         if !custom_decoder.is_empty() {
             ::log::debug!("Custom decoder: {custom_decoder}");
@@ -2898,6 +2899,11 @@ impl Controller {
     }
 
     // ---------- REDline conversion ----------
+    fn is_nikon_raw_video(&self, url: QUrl) -> bool {
+        let url = util::qurl_to_encoded(url);
+        let Ok(mut file) = filesystem::open_file(&url, false, false) else { return false; };
+        core::raw_video::is_nikon_container(file.get_file()).unwrap_or(false)
+    }
     fn find_redline(&self) -> QString {
         QString::from(crate::external_sdk::r3d::REDSdk::find_redline())
     }

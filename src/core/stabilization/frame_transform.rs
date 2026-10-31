@@ -168,8 +168,8 @@ impl FrameTransform {
 
         if lens.fisheye_params.distortion_coeffs.len() < 4 {
             if let Some(val) = file_metadata.lens_params_closest_in(keys.clone(), lens_timestamp_us, 100000, |v| v.has_projection_data()) { // closest within 100ms
-                let pixel_focal_length = val.pixel_focal_length.map(|f| (f.0 as f64, f.1 as f64)).or_else(|| {
-                    let fl_mm = val.focal_length? as f64;
+                let pixel_focal_length = val.valid_pixel_focal_length().map(|f| (f.0 as f64, f.1 as f64)).or_else(|| {
+                    let fl_mm = val.valid_focal_length()? as f64;
                     focal_length = Some(fl_mm);
                     let pp = val.pixel_pitch?;
                     let crop = val.capture_area_size?;
@@ -177,7 +177,7 @@ impl FrameTransform {
                     let fx = (fl_mm / ((pp.0 as f64 / 1_000_000.0) * crop.0 as f64)) * params.width  as f64;
                     let fy = (fl_mm / ((pp.1 as f64 / 1_000_000.0) * crop.1 as f64)) * params.height as f64;
                     Some((fx, fy))
-                });
+                }).filter(|(fx, fy)| fx.is_finite() && fy.is_finite() && *fx > 0.0 && *fy > 0.0);
                 if let Some((fx, fy)) = pixel_focal_length {
                     camera_matrix[(0, 0)] = fx;
                     camera_matrix[(1, 1)] = fy;
@@ -189,7 +189,7 @@ impl FrameTransform {
                     per_frame = true;
                     capture_area = true;
 
-                    if let Some(fl) = val.focal_length {
+                    if let Some(fl) = val.valid_focal_length() {
                         focal_length = Some(fl as f64);
                     }
                 }

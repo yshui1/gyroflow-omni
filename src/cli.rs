@@ -32,7 +32,7 @@ macro_rules! connect {
     };
 }
 
-/** Gyroflow v1.6.3
+/** Gryoflow (Omni) v1.6.3
 Video stabilization using gyroscope data
 Exit codes: 0 - success, 1 - render failure, 2 - invalid arguments
 */
@@ -153,7 +153,7 @@ pub fn run(open_file: &mut String, open_preset: &mut String) -> bool {
         let opts: Opts = argh::from_env();
 
         if opts.version {
-            println!("Gyroflow v{}", crate::util::get_version());
+            println!("Gryoflow (Omni) v{}", crate::util::get_version());
             return true;
         }
 

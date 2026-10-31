@@ -71,6 +71,7 @@ fn entry() {
         qApp->setOrganizationName("Gyroflow");
         qApp->setOrganizationDomain("gyroflow.xyz");
         qApp->setApplicationName("Gyroflow");
+        qApp->setApplicationDisplayName("Gryoflow (Omni)");
 
         QMessageLogger("", 0, "main").debug(QLoggingCategory("gyroflow")) << "Qt version:" << qVersion();
     });
@@ -134,18 +135,20 @@ fn entry() {
 
     //crate::core::util::rename_calib_videos();
 
-    if cfg!(any(target_os = "android", target_os = "ios")) {
-        MDKVideoItem::setGlobalOption("MDK_KEY", "B75BC812C266C3E2D967840494C8866773E4E5FC596729F7D9895BFB2DB3B9AE2515F306FBF29BF20290E1093E9A5B5796B778F866F5F631831\
-            0431F1E34810348A437EDC2663C1D26987BFB6B37799871E4E984201D0790A0FB349D41DCCEAE15E8C6B790A89ADA30C4B6EB323303B0603B3A2BBF50C294456F377CA8FEF103");
-        if cfg!(target_os = "ios") {
-            MDKVideoItem::setGlobalOption("plugins", "mdk-braw");
-        }
-    } else {
-        MDKVideoItem::setGlobalOption("MDK_KEY", "47FA7B212D5FF2F649A245E6D8DC2D88BAB67C208282CB3E2DEB95B9B4F9EC575102303FB92448ED49454E027A31B48ED08824EB904B58F693AD\
-            B52FA63A4008B80584DE2D5F0D09B65DBA192723D277B8B67447FBF0A4584184E2659155D95CFBEB08626CBE3C94416B2FC50B1FA1201AA7381CE3E85DF3F3BF9BCB59677808");
+    // The Windows build embeds the app-specific key from local build configuration.
+    // A runtime override is still available; builds without a key use MDK's keyless mode.
+    let runtime_mdk_key = std::env::var("GYROFLOW_OMNI_MDK_KEY").ok();
+    if let Some(key) = runtime_mdk_key.as_deref().filter(|key| !key.trim().is_empty())
+        .or(option_env!("GYROFLOW_OMNI_MDK_KEY"))
+        .map(str::trim).filter(|key| !key.is_empty()) {
+        MDKVideoItem::setGlobalOption("MDK_KEY", key);
+        ::log::info!("MDK application license configured");
+    }
+    if cfg!(target_os = "ios") {
+        MDKVideoItem::setGlobalOption("plugins", "mdk-braw");
+    } else if !cfg!(target_os = "android") {
         MDKVideoItem::setGlobalOption("plugins", "mdk-braw:mdk-r3d");
     }
-
     if cfg!(target_os = "linux") {
         // Init wgpu before Qt because of a bug in `khronos-egl`
         gyroflow_core::gpu::wgpu::WgpuWrapper::list_devices();

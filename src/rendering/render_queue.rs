@@ -1081,12 +1081,14 @@ impl RenderQueue {
                         let in_file = input_file.url.clone();
 
                         let mut frame = 0;
+                        let mut conversion_failed = false;
                         let r3d_progress = |(percent, error_str, out_url): (f64, String, String)| {
                             if !error_str.is_empty() {
+                                conversion_failed = true;
                                 err(("An error occurred: %1".to_string(), error_str));
                             } else {
                                 progress((percent * 0.98, frame, total_frame_count + 1, false, true));
-                                input_file.url = out_url;
+                                if !out_url.is_empty() { input_file.url = out_url; }
                                 frame += 1;
                             }
                         };
@@ -1103,6 +1105,11 @@ impl RenderQueue {
                             std::thread::sleep(std::time::Duration::from_secs(2));
                             let _ = filesystem::remove_file(&mov_url);
                             err(("Conversion cancelled%1".to_string(), "".to_string()));
+                            return;
+                        }
+                        if conversion_failed { return; }
+                        if input_file.url == in_file || !filesystem::exists(&input_file.url) {
+                            err(("An error occurred: %1".to_string(), "REDline did not produce a converted video. Check its version and Nikon RAW support.".to_string()));
                             return;
                         }
                     }

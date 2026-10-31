@@ -107,6 +107,10 @@ impl REDSdk {
     // Assumes regular filesystem
     pub fn convert_r3d<F: FnMut((f64, String, String))>(url: &str, format: i32, force_primary: bool, gamma: i32, space: i32, additional_params: &str, mut progress: F, cancel_flag: Arc<AtomicBool>) {
         let redline = Self::find_redline();
+        if redline.is_empty() {
+            progress((1.0, "Install REDCINE-X PRO with REDline to export NRAW, R3D NE, or RED R3D footage, or export a Gyroflow project for your video editor.".into(), String::new()));
+            return;
+        }
         if !redline.is_empty() {
             let p = std::path::Path::new(&gyroflow_core::filesystem::url_to_path(url)).to_owned();
 
@@ -165,7 +169,9 @@ impl REDSdk {
                         break;
                     }
                 }
-                if !any_progress || out_filename.is_none() {
+                let status = child.wait()?;
+                if cancel_flag.load(SeqCst) { return Ok(()); }
+                if !status.success() || !any_progress || out_filename.is_none() {
                     progress((1.0, "REDline failed to convert the file. See gyroflow.log for full REDline output and error messages.".into(), out_filename.unwrap_or_default()));
                 } else {
                     progress((1.0, String::new(), out_filename.unwrap_or_default()));

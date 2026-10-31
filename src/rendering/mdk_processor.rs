@@ -45,7 +45,7 @@ impl MDKProcessor {
         }
         if filename.to_ascii_lowercase().ends_with("r3d") || filename.to_ascii_lowercase().ends_with("nev") {
             format = ffmpeg_next::format::Pixel::BGRA;
-            custom_decoder = format!("R3D:gpu=auto{}", options);
+            custom_decoder = gyroflow_core::raw_video::red_decoder(gpu_edcoding, &options);
         }
         ::log::info!("Custom decoder: {custom_decoder}");
 

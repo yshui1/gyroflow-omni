@@ -242,7 +242,7 @@ MenuItem {
     Label {
         id: r3dConvertFormatLabel;
         position: Label.LeftPosition;
-        text: qsTr("Format for R3D conversion");
+        text: qsTr("Format for RAW conversion");
         visible: !!controller.find_redline();
         ComboBox {
             id: r3dConvertFormat;
@@ -260,7 +260,7 @@ MenuItem {
     }
     Label {
         position: Label.LeftPosition;
-        text: "Colors for R3D conversion";
+        text: "Colors for RAW conversion";
         visible: r3dConvertFormatLabel.visible;
         ComboBox {
             id: r3dColorMode;
@@ -271,7 +271,7 @@ MenuItem {
     }
     Label {
         position: Label.LeftPosition;
-        text: "Gamma curve for R3D conversion";
+        text: "Gamma curve for RAW conversion";
         visible: r3dConvertFormatLabel.visible;
         ComboBox {
             id: r3dGammaCurve;
@@ -283,7 +283,7 @@ MenuItem {
     }
     Label {
         position: Label.LeftPosition;
-        text: "Color space for R3D conversion";
+        text: "Color space for RAW conversion";
         visible: r3dConvertFormatLabel.visible;
         ComboBox {
             id: r3dColorSpace;

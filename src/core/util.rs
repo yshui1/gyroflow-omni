@@ -13,7 +13,7 @@ pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 /// (`braw_clip_timing`)
 pub fn get_video_metadata<T: Read + Seek>(stream: &mut T, filesize: usize, url: &str) -> std::result::Result<telemetry_parser::util::VideoMetadata, crate::GyroflowCoreError> {
     let filename = crate::filesystem::get_filename(url);
-    let extensions = ["mp4", "mov", "braw", "insv", "360", "mxf"];
+    let extensions = ["mp4", "mov", "braw", "insv", "360", "mxf", "nev", "r3d"];
     if !extensions.into_iter().any(|ext| filename.to_ascii_lowercase().ends_with(ext)) {
         return Err(crate::GyroflowCoreError::UnsupportedFormat(filename));
     }
@@ -186,6 +186,54 @@ where T: std::ops::Sub<Output = T> + std::ops::Mul<Output = T> + std::ops::Div<O
 mod tests {
     use super::*;
 
+    #[test]
+    fn nikon_raw_extensions_read_quicktime_track_timing() {
+        for codec in [b"NRAW", b"NR3D"] {
+            let mut bytes = include_bytes!("tests/fixtures/video-timing.mp4").to_vec();
+            let config = bytes.windows(4).position(|v| v == b"avcC").unwrap();
+            bytes[config..config + 4].copy_from_slice(b"free");
+            let positions: Vec<_> = bytes.windows(4).enumerate().filter_map(|(i, v)| (v == b"avc1").then_some(i)).collect();
+            assert!(!positions.is_empty());
+            for position in positions { bytes[position..position + 4].copy_from_slice(codec); }
+            for extension in ["NEV", "nev", "R3D", "r3d"] {
+                let url = crate::filesystem::path_to_url(&std::env::current_dir().unwrap().join(format!("test.{extension}")).to_string_lossy());
+                let mut stream = std::io::Cursor::new(&bytes);
+                let md = get_video_metadata(&mut stream, bytes.len(), &url).unwrap();
+                assert_eq!((md.width, md.height), (16, 16));
+                assert!((md.fps - 24000.0 / 1001.0).abs() < 1e-6);
+                assert!((md.duration_s - 2.0 * 1001.0 / 24000.0).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn nikon_raw_extensions_reject_invalid_data() {
+        for name in ["bad.NEV", "bad.R3D", "bad.NEV.bak"] {
+            let mut stream = std::io::Cursor::new(vec![0u8; 64]);
+            let url = crate::filesystem::path_to_url(&std::env::current_dir().unwrap().join(name).to_string_lossy());
+            assert!(get_video_metadata(&mut stream, 64, &url).is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires Nikon ZR camera samples"]
+    fn nikon_zr_camera_metadata() {
+        let directory = std::env::var_os("GYROFLOW_NIKON_SAMPLE_DIR").expect("set GYROFLOW_NIKON_SAMPLE_DIR");
+        for (name, frames) in [("DSC_0073.NEV", 147), ("DSC_0073.R3D", 147), ("DSC_0003.R3D", 15)] {
+            let path = std::path::Path::new(&directory).join(name);
+            let url = crate::filesystem::path_to_url(&path.to_string_lossy());
+            let mut stream = std::fs::File::open(&path).unwrap();
+            let size = stream.metadata().unwrap().len() as usize;
+            let md = get_video_metadata(&mut stream, size, &url).unwrap();
+            assert_eq!((md.width, md.height), (6060, 3410));
+            assert!((md.fps - 24000.0 / 1001.0).abs() < 1e-6);
+            assert!((md.duration_s * md.fps - frames as f64).abs() < 1e-6);
+            stream.seek(std::io::SeekFrom::Start(0)).unwrap();
+            let input = telemetry_parser::Input::from_stream(&mut stream, size, &path, |_| (), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false))).unwrap();
+            assert_eq!(input.camera_type(), "Nikon");
+            println!("{name}: {md:?}, IMU samples={}", telemetry_parser::util::normalized_imu(&input, None).unwrap().len());
+        }
+    }
     #[test]
     fn the_closest_entry_is_less_than_max_diff_away_and_the_later_of_two() {
         let map: BTreeMap<i64, char> = [(0, 'a'), (100, 'b'), (200, 'c'), (1000, 'd')].into_iter().collect();

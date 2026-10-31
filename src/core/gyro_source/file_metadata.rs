@@ -36,14 +36,23 @@ pub struct LensParams {
 impl LensParams {
     /// Whether the imager geometry is complete enough to be used for the stabilization
     pub fn has_geometry(&self) -> bool {
-        self.pixel_pitch.is_some() && self.capture_area_size.is_some() && (self.pixel_focal_length.is_some() || self.focal_length.is_some())
+        self.pixel_pitch.is_some_and(|(x, y)| x > 0 && y > 0)
+            && self.capture_area_size.is_some_and(|(x, y)| x.is_finite() && y.is_finite() && x > 0.0 && y > 0.0)
+            && (self.valid_pixel_focal_length().is_some() || self.valid_focal_length().is_some())
+    }
+    /// Cameras without an electronic lens may record zero as an unknown focal length.
+    pub fn valid_focal_length(&self) -> Option<f32> {
+        self.focal_length.filter(|f| f.is_finite() && *f > 0.0)
+    }
+    pub fn valid_pixel_focal_length(&self) -> Option<(f32, f32)> {
+        self.pixel_focal_length.filter(|(fx, fy)| fx.is_finite() && fy.is_finite() && *fx > 0.0 && *fy > 0.0)
     }
     pub fn has_descriptive_data(&self) -> bool {
         self.focus_distance.is_some() || self.iris_fstop.is_some() || self.iris_tstop.is_some()
     }
     pub fn has_projection_data(&self) -> bool {
-        self.pixel_focal_length.is_some()
-            || (self.focal_length.is_some() && self.pixel_pitch.is_some() && self.capture_area_size.is_some())
+        self.valid_pixel_focal_length().is_some()
+            || self.has_geometry()
             || !self.distortion_coefficients.is_empty()
     }
     pub fn has_readout_scale(&self) -> bool {

@@ -23,6 +23,7 @@ pub mod settings;
 pub mod gpu;
 
 pub mod util;
+pub mod raw_video;
 pub mod stabilization_params;
 pub mod frame_times;
 
