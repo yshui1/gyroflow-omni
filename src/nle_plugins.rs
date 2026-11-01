@@ -9,13 +9,13 @@ use std::path::Path;
 pub fn get_path(typ: &str) -> &'static str {
     if cfg!(target_os = "windows") {
         if typ == "openfx" {
-            return "C:/Program Files/Common Files/OFX/Plugins/Gyroflow.ofx.bundle";
+            return "C:/Program Files/Common Files/OFX/Plugins/GyroflowOmni.ofx.bundle";
         } else if typ == "adobe" {
             return "C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/Gyroflow-Adobe-windows.aex";
         }
     } else if cfg!(target_os = "macos") {
         if typ == "openfx" {
-            return "/Library/OFX/Plugins/Gyroflow.ofx.bundle";
+            return "/Library/OFX/Plugins/GyroflowOmni.ofx.bundle";
         } else if typ == "adobe" {
             return "/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore/Gyroflow.plugin";
         }
@@ -50,7 +50,7 @@ fn query_file_version(path: &str) -> Option<String> {
             unsafe {
                 let mut buffer = std::ptr::null_mut();
                 let mut len = 0;
-                let ok = VerQueryValueW(pblock, &HSTRING::from(format!("\\\\StringFileInfo\\\\{lang_id:08x}\\\\{version_detail}")), &mut buffer, &mut len);
+                let ok = VerQueryValueW(pblock, &HSTRING::from(format!("\\StringFileInfo\\{lang_id:08x}\\{version_detail}")), &mut buffer, &mut len);
                 if ok == false || len == 0 {
                     return None;
                 }
@@ -62,6 +62,8 @@ fn query_file_version(path: &str) -> Option<String> {
             }
         }
 
+        // Adobe shares its historical filename with upstream; only report Omni builds here.
+        if !file_version_item(pblock, lang_id, "ProductName")?.contains("Omni") { return None; }
         let v = file_version_item(pblock, lang_id, "ProductVersion")?;
         if v.split('.').count() == 4 && v.ends_with(".0") {
             return Some(v.strip_suffix(".0").unwrap().to_owned());
@@ -88,7 +90,7 @@ fn copy_files(tempdir: &str, extract_path: &str, typ: &str) -> io::Result<()> {
     } else if cfg!(target_os = "macos") {
         if gyroflow_core::filesystem::is_sandboxed() {
             let macosname = match typ {
-                "openfx" => "Gyroflow.ofx.bundle",
+                "openfx" => "GyroflowOmni.ofx.bundle",
                 "adobe" => "Gyroflow.plugin",
                 _ => unreachable!()
             };
@@ -148,11 +150,11 @@ fn copy_files(tempdir: &str, extract_path: &str, typ: &str) -> io::Result<()> {
 }
 
 pub fn install(typ: &str, plugins_base: String) -> io::Result<String> {
-    let mut nightly_base = "https://nightly.link/gyroflow/gyroflow-plugins/workflows/release/main/";
+    let mut nightly_base = "https://nightly.link/yshui1/gyroflow-plugins-omni/workflows/release/main/";
     if !plugins_base.is_empty() {
         nightly_base = &plugins_base;
     }
-    let release_base = "https://github.com/gyroflow/gyroflow-plugins/releases/latest/download/";
+    let release_base = "https://github.com/yshui1/gyroflow-plugins-omni/releases/latest/download/";
     let (download_url, extract_path) = match typ {
         "openfx" => {
             if cfg!(target_os = "windows") {
@@ -175,7 +177,10 @@ pub fn install(typ: &str, plugins_base: String) -> io::Result<String> {
         _ => unreachable!()
     };
 
-    if let Ok(mut reader) = ureq::get(&download_url).call().map(|x| x.into_body().into_reader()) {
+    let mut reader = ureq::get(&download_url).call()
+        .map_err(|e| io::Error::other(format!("Unable to download Omni plugin: {e}")))?
+        .into_body().into_reader();
+    {
         use std::io::Read;
         let mut content = Vec::new();
         reader.read_to_end(&mut content)?;
@@ -248,7 +253,7 @@ pub fn is_nle_installed(typ: &str) -> bool {
 
 pub fn latest_version() -> Option<String> {
     if is_nightly() {
-        let body = ureq::get("https://api.github.com/repos/gyroflow/gyroflow-plugins/actions/runs").call().ok()?.into_body().read_to_string().ok()?;
+        let body = ureq::get("https://api.github.com/repos/yshui1/gyroflow-plugins-omni/actions/workflows/release.yml/runs?branch=main&status=success").call().ok()?.into_body().read_to_string().ok()?;
         let v: serde_json::Value = serde_json::from_str(&body).ok()?;
         for obj in v.get("workflow_runs")?.as_array()? {
             let obj = obj.as_object()?;
@@ -257,7 +262,7 @@ pub fn latest_version() -> Option<String> {
             }
         }
     } else {
-        let body = ureq::get("https://api.github.com/repos/gyroflow/gyroflow-plugins/releases").call().ok()?.into_body().read_to_string().ok()?;
+        let body = ureq::get("https://api.github.com/repos/yshui1/gyroflow-plugins-omni/releases").call().ok()?.into_body().read_to_string().ok()?;
         let v: Vec<serde_json::Value> = serde_json::from_str(&body).ok()?;
         for obj in v {
             let obj = obj.as_object()?;
@@ -273,7 +278,7 @@ pub fn detect(typ: &str) -> io::Result<String> {
     let path = get_path(typ);
     #[cfg(target_os = "windows")] {
         if !path.is_empty() && Path::new(path).exists() {
-            Ok(query_file_version(&if typ == "openfx" { format!("{path}/Contents/Win64/Gyroflow.ofx") } else { path.to_owned() }).unwrap_or_default())
+            Ok(query_file_version(&if typ == "openfx" { format!("{path}/Contents/Win64/GyroflowOmni.ofx") } else { path.to_owned() }).unwrap_or_default())
         } else {
             Ok(String::new())
         }

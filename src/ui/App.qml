@@ -527,6 +527,8 @@ Rectangle {
             ItemLoader { id: advanced; sourceComponent: Component { Menu.Advanced { } } }
             Hr { id: advancedHr; visible: nlePlugins.active }
             ItemLoader { id: nlePlugins; active: controller.is_nle_installed(); sourceComponent: Component { Menu.NlePlugins { } } }
+            Hr { }
+            ItemLoader { sourceComponent: Component { Menu.Language { } } }
         }
     }
 

@@ -12,6 +12,7 @@ use std::cell::RefCell;
 pub use gyroflow_core as core;
 pub mod util;
 pub mod controller;
+mod calibration_lut;
 pub mod rendering;
 pub mod external_sdk;
 #[cfg(any(target_os = "windows", target_os = "macos"))]

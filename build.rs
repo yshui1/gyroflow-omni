@@ -101,6 +101,8 @@ fn main() {
     }
     // config.define("QT_QML_DEBUG", None);
     println!("cargo:rerun-if-changed=src/qt_gpu/qrhi_undistort.cpp");
+    println!("cargo:rerun-if-changed=src/ui/ui_tools.rs");
+    println!("cargo:rerun-if-changed=src/ui/ui_font.h");
 
     if target_os == "ios" {
         println!("cargo:rerun-if-changed=_deployment/ios/qml_plugins.cpp");

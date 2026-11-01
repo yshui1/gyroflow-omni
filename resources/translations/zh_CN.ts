@@ -135,6 +135,31 @@ Note that this is only a visual indicator, it doesn&apos;t affect rendering.</so
       <source>Open data folder</source>
       <translation>打开数据文件夹</translation>
     </message>
+    <message>
+      <location filename="../../src/ui/menu/Advanced.qml" line="196"/>
+      <source>Format for RAW conversion</source>
+      <translation>RAW 转换格式</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Advanced.qml" line="214"/>
+      <source>Colors for RAW conversion</source>
+      <translation>RAW 转换色彩处理</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Advanced.qml" line="225"/>
+      <source>Gamma curve for RAW conversion</source>
+      <translation>RAW 转换伽马曲线</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Advanced.qml" line="237"/>
+      <source>Color space for RAW conversion</source>
+      <translation>RAW 转换色彩空间</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Advanced.qml" line="249"/>
+      <source>Additional REDline params</source>
+      <translation>附加 REDline 参数</translation>
+    </message>
   </context>
   <context>
     <name>AdvancedSection</name>
@@ -455,6 +480,16 @@ If your computer has more than one GPU, select another one in &quot;Device for r
       <source>Audio encoder couldn&apos;t process the input data. Try unchecking &quot;Export audio&quot; in Export settings.</source>
       <translation>音频编码器无法处理输入数据。请尝试在导出设置中取消 &quot;导出音频&quot;。</translation>
     </message>
+    <message>
+      <location filename="../../src/ui/App.qml" line="298"/>
+      <source>To export NRAW, R3D NE, or RED R3D footage, install REDCINE-X PRO with REDline and a version that supports your camera. Gyroflow converts the footage to ProRes before stabilizing. You can also export a project including gyro data for your video editor.</source>
+      <translation>要导出 NRAW、R3D NE 或 RED R3D 素材，请安装支持您相机的 REDCINE-X PRO（包含 REDline）。Gyroflow 会先将素材转换为 ProRes，再进行防抖处理。您也可以导出包含陀螺仪数据的项目，在视频编辑软件中使用。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/App.qml" line="326"/>
+      <source>Rendering to this output would write over %1, which it's rendered from. Choose another name or folder for the output.</source>
+      <translation>输出文件会覆盖作为输入素材的 %1。请为输出文件选择其他名称或文件夹。</translation>
+    </message>
   </context>
   <context>
     <name>CalibrationTarget</name>
@@ -466,6 +501,10 @@ If your computer has more than one GPU, select another one in &quot;Device for r
   </context>
   <context>
     <name>Calibrator</name>
+    <message>
+      <source>Unable to load calibration LUT: %1</source>
+      <translation>无法加载校准 LUT：%1</translation>
+    </message>
     <message>
       <location filename="../../src/ui/Calibrator.qml" line="49"/>
       <source>Lens calibrator</source>
@@ -1124,6 +1163,61 @@ Do you want to submit your profile?</source>
       <source>ms</source>
       <translation>毫秒</translation>
     </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="246"/>
+      <source>Calibration LUT</source>
+      <translation>校准 LUT</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="247"/>
+      <source>Transform decoded log footage before detecting the calibration pattern. Choose a LUT that matches the decoded footage's gamma and gamut.</source>
+      <translation>在检测校准图案前，对解码后的 Log 素材应用色彩转换。请选择与解码素材的伽马曲线和色域匹配的 LUT。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="251"/>
+      <source>Auto detect</source>
+      <translation>自动检测</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="251"/>
+      <source>None</source>
+      <translation>无</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="251"/>
+      <source>Custom LUT…</source>
+      <translation>自定义 LUT…</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="261"/>
+      <source>Browse LUT…</source>
+      <translation>浏览 LUT…</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="266"/>
+      <source>Detected: %1.</source>
+      <translation>已检测到：%1。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="266"/>
+      <source>No supported log gamma detected. Select a LUT if needed.</source>
+      <translation>未检测到支持的 Log 伽马曲线。请按需手动选择 LUT。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="267"/>
+      <source>Applies to calibration and GPU preview. Changing the LUT clears detected patterns; run calibration again.</source>
+      <translation>应用于校准和 GPU 预览。更改 LUT 会清除已检测的图案，请重新运行校准。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="271"/>
+      <source>Choose a calibration LUT</source>
+      <translation>选择校准 LUT</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/LensCalibrate.qml" line="273"/>
+      <source>3D LUT files</source>
+      <translation>3D LUT 文件</translation>
+    </message>
   </context>
   <context>
     <name>LensProfile</name>
@@ -1739,6 +1833,11 @@ Do you want to submit your profile?</source>
       <source>Export project file (including processed gyro data)</source>
       <translation>导出项目文件 (包括处理过的陀螺数据)</translation>
     </message>
+    <message>
+      <location filename="../../src/ui/menu/MotionData.qml" line="400"/>
+      <source>GMFlow uses an AI model to follow both weak detail and fast motion, but is much slower. Its model (about 30 MB) is downloaded the first time it's used.</source>
+      <translation>GMFlow 使用 AI 模型跟踪低细节区域和快速运动，但速度明显较慢。首次使用时会下载模型（约 30 MB）。</translation>
+    </message>
   </context>
   <context>
     <name>NlePlugins</name>
@@ -1812,6 +1911,12 @@ Open &lt;b&gt;Terminal&lt;/b&gt; and enter the following command:</source>
       <location filename="../../src/ui/menu/NlePlugins.qml" line="167"/>
       <source>More information</source>
       <translation>更多信息</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/NlePlugins.qml" line="107"/>
+      <location filename="../../src/ui/menu/NlePlugins.qml" line="134"/>
+      <source>(nightly)</source>
+      <translation>（开发版）</translation>
     </message>
   </context>
   <context>
@@ -2144,6 +2249,26 @@ Open &lt;b&gt;Terminal&lt;/b&gt; and enter the following command:</source>
       <location filename="../../src/ui/menu/Stabilization.qml" line="631"/>
       <source>Automatic</source>
       <translation>自动</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Advanced.qml" line="218"/>
+      <source>Fully graded in REDCINE-X</source>
+      <translation>使用 REDCINE-X 完整调色</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Advanced.qml" line="218"/>
+      <source>Primary development only</source>
+      <translation>仅进行基础显影</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/MotionData.qml" line="395"/>
+      <source>GMFlow (AI dense flow)</source>
+      <translation>GMFlow（AI 稠密光流）</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Synchronization.qml" line="373"/>
+      <source>Optical analysis</source>
+      <translation>光学分析</translation>
     </message>
   </context>
   <context>
@@ -3428,6 +3553,20 @@ Make sure you have proper rolling shutter value set before syncing.</source>
       <source>Show optical flow</source>
       <translation>显示光学流量</translation>
     </message>
+    <message>
+      <location filename="../../src/ui/menu/Synchronization.qml" line="338"/>
+      <source>GMFlow uses an AI model to follow fast motion and weak detail, but is much slower than the other methods. Its model (about 30 MB) is downloaded the first time it's used.</source>
+      <translation>GMFlow 使用 AI 模型跟踪快速运动和低细节区域，但比其他方法慢得多。首次使用时会下载模型（约 30 MB）。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/menu/Synchronization.qml" line="381"/>
+      <source>Track the sync points the way "Analyze image optically" does.
+Find the rough offset by matching the video's own rotation to the motion data, then refine it at each sync point by fitting the rotation of every band of rows, rolling shutter included.
+The most accurate method. The optical flow and pose methods don't apply to it.</source>
+      <translation>以“光学分析图像”的方式跟踪同步点。
+通过匹配视频中的旋转与运动数据估算时间偏移，再在每个同步点拟合各行带的旋转（包括卷帘快门影响），以精确调整偏移。
+这是最精确的方法，不使用光流或姿态方法。</translation>
+    </message>
   </context>
   <context>
     <name>TableList</name>
@@ -4359,6 +4498,28 @@ Disable lens stabilization (Optical SteadyShot) in order to use Gyroflow.</sourc
       <location filename="../../src/ui/VideoArea.qml" line="1263"/>
       <source>The video plays unstabilized until it&apos;s loaded.</source>
       <translation>陀螺数据加载完成前，视频将以未增稳状态播放。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/VideoArea.qml" line="282"/>
+      <source>This video was recorded with the lens image stabilizer (IS) on, which Gyroflow doesn't support for Canon cameras.
+Turn the image stabilizer off in order to use Gyroflow.</source>
+      <translation>此视频录制时开启了镜头光学防抖（IS），Gyroflow 不支持佳能相机的这一设置。
+请关闭镜头防抖后再录制，以便使用 Gyroflow。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/VideoArea.qml" line="517"/>
+      <source>The output file is one of the files being merged. Choose another name or folder for the output.</source>
+      <translation>输出文件与正在合并的某个输入文件相同。请选择其他输出名称或文件夹。</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/VideoArea.qml" line="528"/>
+      <source>Output file already exists, do you want to overwrite it?</source>
+      <translation>输出文件已存在，是否覆盖？</translation>
+    </message>
+    <message>
+      <location filename="../../src/ui/VideoArea.qml" line="530"/>
+      <source>Rename</source>
+      <translation>重命名</translation>
     </message>
   </context>
   <context>
