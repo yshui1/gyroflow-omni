@@ -523,7 +523,10 @@ pub fn run(open_file: &mut String, open_preset: &mut String) -> bool {
                 if queue.jobs_added.is_empty() {
                     // All jobs added and completed processing
 
-                    if !by_preset {
+                    // `apply_to_all` only reports back for queued jobs. With none left (all failed, eg. output over input),
+                    // waiting for it would never start the queue and the CLI would never exit
+                    let any_queued = queue.queue.borrow().iter().any(|v| *v.get_status() == JobStatus::Queued);
+                    if !by_preset && any_queued {
                         // Apply presets
                         for preset in &presets {
                             log::info!("Applying preset {}", preset);
