@@ -294,7 +294,13 @@ Rectangle {
 
                         function render(): void {
                             const fname = vidInfo.item.filename.toLowerCase();
-                            if (fname.endsWith('.braw') || ((fname.endsWith('.r3d') || fname.endsWith('.nev')) && !controller.find_redline()) || fname.endsWith('.dng')) {
+                            if ((fname.endsWith('.r3d') || fname.endsWith('.nev')) && !controller.find_redline()) {
+                                messageBox(Modal.Info, qsTr("To export NRAW, R3D NE, or RED R3D footage, install REDCINE-X PRO with REDline and a version that supports your camera. Gyroflow converts the footage to ProRes before stabilizing. You can also export a project including gyro data for your video editor."), [
+                                    { text: qsTr("Ok"), accent: true }
+                                ]);
+                                return;
+                            }
+                            if (fname.endsWith('.braw') || fname.endsWith('.dng')) {
                                 messageBox(Modal.Info, qsTr("This format is not available for rendering.\nThe recommended workflow is to export project file and use one of [video editor plugins] (%1).").replace(/\[(.*?)\]/, '<a href="https://gyroflow.xyz/download#plugins"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Adobe Premiere/Ae, Final Cut Pro"), [
                                     { text: qsTr("Ok"), accent: true }
                                 ]);
@@ -350,8 +356,8 @@ Rectangle {
                                 return;
                             }
 
-                            if (fname.endsWith('.r3d') && controller.find_redline()) {
-                                messageBox(Modal.Info, "Gyroflow will use REDline to convert .R3D to ProRes before stabilizing in order to export from Gyroflow directly.\nIf you want to work on RAW data instead, export project file (Ctrl+S) and use one of [video editor plugins] (%1).".replace(/\[(.*?)\]/, '<a href="https://gyroflow.xyz/download#plugins"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Final Cut Pro"), [
+                            if ((fname.endsWith('.r3d') || fname.endsWith('.nev')) && controller.find_redline()) {
+                                messageBox(Modal.Info, "Gyroflow will use REDline to convert NRAW (.NEV), R3D NE, or RED R3D to ProRes before stabilizing in order to export from Gyroflow directly.\nIf you want to work on RAW data instead, export project file (Ctrl+S) and use one of [video editor plugins] (%1).".replace(/\[(.*?)\]/, '<a href="https://gyroflow.xyz/download#plugins"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Final Cut Pro"), [
                                     { text: qsTr("Ok"), accent: true }
                                 ], undefined, Text.StyledText, "r3d-conversion" );
                             }
@@ -521,6 +527,8 @@ Rectangle {
             ItemLoader { id: advanced; sourceComponent: Component { Menu.Advanced { } } }
             Hr { id: advancedHr; visible: nlePlugins.active }
             ItemLoader { id: nlePlugins; active: controller.is_nle_installed(); sourceComponent: Component { Menu.NlePlugins { } } }
+            Hr { }
+            ItemLoader { sourceComponent: Component { Menu.Language { } } }
         }
     }
 

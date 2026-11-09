@@ -13,6 +13,7 @@ use windows::Win32::{ Foundation::HWND, UI::Shell::{ ITaskbarList4, TaskbarList 
 cpp! {{
     #include <QTranslator>
     #include <QJsonObject>
+    #include "src/ui/ui_font.h"
     #include <qpa/qplatformwindow.h>
 }}
 
@@ -40,13 +41,23 @@ pub struct UITools {
     main_window_handle: Option<isize>,
 
     is_dark: bool,
+    current_language: RefCell<QString>,
 
     pub engine_ptr: Option<*mut QmlEngine>
 }
 impl UITools {
+    fn apply_ui_font(engine: &mut QmlEngine, lang_id: QString) {
+        let family = cpp!(unsafe [lang_id as "QString"] -> QString as "QString" {
+            return omniApplyUiFont(lang_id);
+        });
+        engine.set_property("styleFont".into(), family.into());
+    }
+
     pub fn set_language(&self, lang_id: QString) {
+        *self.current_language.borrow_mut() = lang_id.clone();
         if let Some(engine) = self.engine_ptr {
             let engine = unsafe { &mut *(engine) };
+            Self::apply_ui_font(engine, lang_id.clone());
             let engine_ptr = engine.cpp_ptr();
             cpp!(unsafe [engine_ptr as "QQmlEngine *", lang_id as "QString"] {
                 static QTranslator translator;
@@ -81,8 +92,10 @@ impl UITools {
         if let Some(engine) = self.engine_ptr {
             let engine = unsafe { &mut *(engine) };
 
-            cpp!(unsafe [] { auto f = QGuiApplication::font(); f.setFamily("Arial"); QGuiApplication::setFont(f); });
-            engine.set_property("styleFont".into(), QString::from("Arial").into());
+            let language = if self.current_language.borrow().to_string().is_empty() {
+                gyroflow_core::settings::get_str("lang", &self.get_default_language().to_string()).into()
+            } else { self.current_language.borrow().clone() };
+            Self::apply_ui_font(engine, language);
 
             let force_mobile = theme.starts_with("mobile_");
             let force_destop = theme.starts_with("desktop_");

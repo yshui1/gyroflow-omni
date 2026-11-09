@@ -30,6 +30,8 @@ use crate::ui::components::TimelineKeyframesView::TimelineKeyframesView;
 use crate::ui::components::FrequencyGraph::FrequencyGraph;
 use crate::qt_gpu::qrhi_undistort;
 
+use crate::calibration_lut;
+
 #[derive(Default, SimpleListItem)]
 struct OffsetItem {
     pub timestamp_us: i64,
@@ -75,6 +77,11 @@ pub struct Controller {
     get_optimal_sync_points: qt_method!(fn(&mut self, target_sync_points: usize, initial_offset: f64) -> QString),
 
     start_autocalibrate: qt_method!(fn(&self, max_points: usize, every_nth_frame: usize, iterations: usize, max_sharpness: f64, custom_timestamp_ms: f64, no_marker: bool)),
+    set_calibration_lut: qt_method!(fn(&mut self, source: QString) -> bool),
+    detect_calibration_lut: qt_method!(fn(&self, brand: QString, model: QString, gamma: QString) -> QString),
+    calibration_lut: Option<Arc<calibration_lut::CubeLut>>,
+    calibration_lut_source: String,
+    preview_calibration_lut: Arc<parking_lot::RwLock<(u64, Option<Arc<calibration_lut::CubeLut>>)>>,
 
     telemetry_loaded: qt_signal!(is_main_video: bool, filename: QString, camera: QString, additional_data: QJsonObject),
     lens_profile_loaded: qt_signal!(lens_json: QString, filepath: QString, checksum: QString),
@@ -323,6 +330,7 @@ pub struct Controller {
 
     // ---------- REDline conversion ----------
     find_redline: qt_method!(fn(&self) -> QString),
+    is_nikon_raw_video: qt_method!(fn(&self, url: QUrl) -> bool),
     // ---------- REDline conversion ----------
 
     play_sound: qt_method!(fn(&mut self, typ: String)),
@@ -423,7 +431,7 @@ impl Controller {
             custom_decoder = format!("BRAW:gpu={}{}", gpu, options);
         }
         if filename.to_ascii_lowercase().ends_with("r3d") || filename.to_ascii_lowercase().ends_with("nev") {
-            custom_decoder = format!("R3D:gpu=auto{}", options);
+            custom_decoder = core::raw_video::red_decoder(self.stabilizer.gpu_decoding.load(SeqCst), &options);
         }
         if !custom_decoder.is_empty() {
             ::log::debug!("Custom decoder: {custom_decoder}");
@@ -1206,6 +1214,7 @@ impl Controller {
             }));
             let stab = self.stabilizer.clone();
             let preview_pipeline = self.preview_pipeline.clone();
+            let preview_lut = self.preview_calibration_lut.clone();
             let out_pixels = RefCell::new(Vec::new());
             let update_info = util::qt_queued_callback_mut(QPointer::from(self as &Self), move |this, (fov, minimal_fov, focal_length, info): (f64, f64, Option<f64>, QString)| {
                 this.current_fov = fov;
@@ -1220,11 +1229,13 @@ impl Controller {
             vid.onProcessTexture(Box::new(move |frame, timestamp_ms, width, height, backend_id, ptr1, ptr2, ptr3, ptr4, ptr5| -> bool {
                 if width < 4 || height < 4 || backend_id == 0 { return false; }
 
-                if !stab.params.read().stab_enabled { return true; }
+                let (lut_revision, lut) = preview_lut.read().clone();
+                if !stab.params.read().stab_enabled && lut.is_none() { return true; }
 
                 let _time = std::time::Instant::now();
 
-                if preview_pipeline.load(SeqCst) == 0 {
+                // Calibration color preview stays on the GPU, even if another analysis pipeline was selected.
+                if preview_pipeline.load(SeqCst) == 0 || lut.is_some() {
                     let mut buffers = Buffers{
                         input:  BufferDescription { size: (width as usize, height as usize, width as usize * 4), ..Default::default() },
                         output: BufferDescription { size: (width as usize, height as usize, width as usize * 4), ..Default::default() },
@@ -1237,7 +1248,7 @@ impl Controller {
                     let frame = (frame as i32 + offset).max(0) as u32;
                     let timestamp_ms = timestamp_ms + (offset as f64 / fps * 1000.0).round();
 
-                    if let Some(ret) = qrhi_undistort::render(vid1.get_mdkplayer(), timestamp_ms, frame as usize, width, height, stab.clone(), &mut buffers) {
+                    if let Some(ret) = qrhi_undistort::render(vid1.get_mdkplayer(), timestamp_ms, frame as usize, width, height, stab.clone(), &mut buffers, lut_revision, lut.as_ref().map(|x| x.gpu())) {
                         update_info2((ret.fov, ret.minimal_fov, ret.focal_length, QString::from(format!("Processing {}x{} using {} took {:.2}ms", width, height, ret.backend, _time.elapsed().as_micros() as f64 / 1000.0))));
                     } else {
                         update_info2((1.0, 1.0, None, QString::from("---")));
@@ -1987,6 +1998,52 @@ impl Controller {
         });
     }
 
+    fn detect_calibration_lut(&self, brand: QString, model: QString, gamma: QString) -> QString {
+        calibration_lut::detect(&brand.to_string(), &model.to_string(), &gamma.to_string()).into()
+    }
+
+    fn set_calibration_lut(&mut self, source: QString) -> bool {
+        let source = source.to_string();
+        if self.calib_in_progress { return false; }
+        if source == self.calibration_lut_source { return true; }
+        let result = if source.is_empty() {
+            Ok(None)
+        } else {
+            let text = if let Some((_, text)) = calibration_lut::BUILTINS.iter().find(|(id, _)| *id == source) {
+                Ok(text.to_string())
+            } else {
+                filesystem::read(&source).map_err(|e| e.to_string()).and_then(|data| String::from_utf8(data).map_err(|e| e.to_string()))
+            };
+            text.and_then(|text| calibration_lut::CubeLut::parse(&text)).map(|lut| Some(Arc::new(lut)))
+        };
+        match result {
+            Ok(lut) => {
+                // Build the atlas once on selection, never in the playback loop.
+                if let Some(lut) = lut.as_ref() { lut.gpu(); }
+                {
+                    let mut preview = self.preview_calibration_lut.write();
+                    preview.0 = preview.0.wrapping_add(1);
+                    preview.1 = lut.clone();
+                }
+                self.calibration_lut = lut;
+                self.calibration_lut_source = source;
+                // feed_frame caches detections by frame number. They must be found again with the new transform.
+                #[cfg(feature = "opencv")]
+                {
+                    if let Some(cal) = self.stabilizer.lens_calibrator.write().as_mut() {
+                        cal.reset_detections();
+                    }
+                    self.update_calib_model();
+                }
+                true
+            },
+            Err(e) => {
+                self.error("Unable to load calibration LUT: %1".into(), e.into(), QString::default());
+                false
+            }
+        }
+    }
+
     pub fn init_calibrator(&self) {
         #[cfg(feature = "opencv")]
         {
@@ -2071,6 +2128,7 @@ impl Controller {
             let processing_resolution = self.processing_resolution;
 
             let input_file = stab.input_file.read().clone();
+            let calibration_lut = self.calibration_lut.clone();
             core::run_threaded(move || {
 
                 let mut decoder_options = ffmpeg_next::Dictionary::new();
@@ -2113,9 +2171,15 @@ impl Controller {
                                     width = (width as f32 / pt_scale).round() as u32;
                                     height = (height as f32 / pt_scale).round() as u32;
                                 }
-                                match converter.scale(input_frame, ffmpeg_next::format::Pixel::GRAY8, width, height) {
+                                let pixel_format = if calibration_lut.is_some() { ffmpeg_next::format::Pixel::RGB48LE } else { ffmpeg_next::format::Pixel::GRAY8 };
+                                match converter.scale(input_frame, pixel_format, width, height) {
                                     Ok(mut small_frame) => {
                                         let (width, height, stride, pixels) = (small_frame.plane_width(0), small_frame.plane_height(0), small_frame.stride(0), small_frame.data_mut(0));
+                                        let gray;
+                                        let (stride, pixels) = if let Some(lut) = calibration_lut.as_ref() {
+                                            gray = lut.rgb48_to_gray(pixels, width as usize, height as usize, stride);
+                                            (width as usize, gray.as_slice())
+                                        } else { (stride, &*pixels) };
 
                                         total_read.fetch_add(1, SeqCst);
                                         let mut lock = cal.write();
@@ -2700,7 +2764,7 @@ impl Controller {
         core::run_threaded(move || {
             let mut vidinfo = None;
             for x in &file_list {
-                match rendering::ffmpeg_processor::FfmpegProcessor::get_video_info(x) {
+                match rendering::ffmpeg_processor::FfmpegProcessor::get_video_info(x, None) {
                     Ok(x) => {
                         if vidinfo.is_none() {
                             vidinfo = Some(x);
@@ -2734,7 +2798,7 @@ impl Controller {
                 Ok(x) => x,
                 Err(e) => { progress((1.0, e, None)); return; }
             };
-            let mut file_references: Vec<(&mut std::fs::File, usize)> = opened.iter_mut().map(|x| { let s = x.size; (x.get_file(), s) }).collect();
+            let mut file_references: Vec<(&mut std::fs::File, usize)> = opened.iter_mut().map(|x| { let s = x.size as usize; (x.get_file(), s) }).collect();
             let mut output = match MergeOutput::create(target) {
                 Ok(x) => x,
                 Err(e) => { progress((1.0, e, None)); return; }
@@ -2898,6 +2962,11 @@ impl Controller {
     }
 
     // ---------- REDline conversion ----------
+    fn is_nikon_raw_video(&self, url: QUrl) -> bool {
+        let url = util::qurl_to_encoded(url);
+        let Ok(mut file) = filesystem::open_file(&url, false, false) else { return false; };
+        core::raw_video::is_nikon_container(file.get_file()).unwrap_or(false)
+    }
     fn find_redline(&self) -> QString {
         QString::from(crate::external_sdk::r3d::REDSdk::find_redline())
     }
@@ -3024,11 +3093,7 @@ impl Controller {
 
     /// The frame rate an image of a sequence records (a CinemaDNG frame's FrameRate tag), 0 when it doesn't record one
     fn image_sequence_frame_rate(&self, url: QUrl) -> f64 {
-        let url = util::qurl_to_encoded(url);
-        if !filesystem::get_filename(&url).to_ascii_lowercase().ends_with(".dng") { return 0.0; }
-        let Ok(mut file) = filesystem::open_file(&url, false, false) else { return 0.0; };
-        let size = file.size as u64;
-        gyroflow_core::telemetry_parser::gyroflow::cdng::frame_rate(file.get_file(), size).unwrap_or_default()
+        rendering::image_sequence_frame_rate(&util::qurl_to_encoded(url))
     }
 
     /// The input file that rendering the video loaded to `filename` in `folder` with `codec` would write over, as it's shown

@@ -28,14 +28,9 @@ MenuItem {
         property alias r3dGammaCurve: r3dGammaCurve.currentIndex;
         property alias r3dColorSpace: r3dColorSpace.currentIndex;
         property alias r3dRedlineParams: r3dRedlineParams.text;
-        property string lang: ui_tools.get_default_language();
 
         Component.onCompleted: {
             settings.init(sett);
-            let selectedIndex = 0;
-            let i = 0;
-            langList.model = langList.langs.map((x) => { if (x[1] == sett.lang) { selectedIndex = i; } i++; return x[0]; });
-            langList.currentIndex = selectedIndex;
         }
         function propChanged() { settings.propChanged(sett); }
     }
@@ -181,50 +176,6 @@ MenuItem {
             }
         }
     }
-    Label {
-        position: Label.LeftPosition;
-        text: qsTr("Language");
-
-        ComboBox {
-            id: langList;
-            property var langs: [
-                ["English",                      "en"],
-                ["Chinese - Simplified (简体中文)",  "zh_CN"],
-                ["Chinese - Traditional (繁體中文)", "zh_TW"],
-                ["Czech (Čeština)",              "cs"],
-                ["Danish (dansk)",               "da"],
-                ["Finnish (suomi)",              "fi"],
-                ["French (français)",            "fr"],
-                ["Galician (Galego)",            "gl"],
-                ["German (Deutsch)",             "de"],
-                ["Greek (Ελληνικά)",             "el"],
-                ["Indonesian (Bahasa Indonesia)","id"],
-                ["Italian (italiano)",           "it"],
-                ["Japanese (日本語)",             "ja"],
-                ["Korean (한국어)",              "ko"],
-                ["Norwegian (norsk)",            "no"],
-                ["Polish (polski)",              "pl"],
-                ["Portuguese - Brazilian (português brasileiro)", "pt_BR"],
-                ["Portuguese (português)",       "pt"],
-                ["Russian (русский)",            "ru"],
-                ["Serbian (srpski)",             "sr_CS"],
-                ["Slovak (slovenský)",           "sk"],
-                ["Spanish (español)",            "es"],
-                ["Turkish (Türkçe)",             "tr"],
-                ["Ukrainian (Українська мова)",  "uk"]
-            ];
-            font.pixelSize: 12 * dpiScale;
-            width: parent.width;
-            function setLang(): void {
-                sett.lang = langs[currentIndex][1];
-
-                window.LayoutMirroring.enabled = sett.lang == "ar" || sett.lang == "fa" || sett.lang == "he";
-                window.LayoutMirroring.childrenInherit = true;
-                ui_tools.set_language(sett.lang);
-            }
-            onCurrentIndexChanged: Qt.callLater(setLang);
-        }
-    }
     CheckBox {
         id: safeAreaGuide;
         text: qsTr("Safe area guide");
@@ -242,7 +193,7 @@ MenuItem {
     Label {
         id: r3dConvertFormatLabel;
         position: Label.LeftPosition;
-        text: qsTr("Format for R3D conversion");
+        text: qsTr("Format for RAW conversion");
         visible: !!controller.find_redline();
         ComboBox {
             id: r3dConvertFormat;
@@ -260,18 +211,18 @@ MenuItem {
     }
     Label {
         position: Label.LeftPosition;
-        text: "Colors for R3D conversion";
+        text: qsTr("Colors for RAW conversion");
         visible: r3dConvertFormatLabel.visible;
         ComboBox {
             id: r3dColorMode;
-            model: ["Fully graded in REDCINE-X", "Primary development only"];
+            model: [QT_TRANSLATE_NOOP("Popup", "Fully graded in REDCINE-X"), QT_TRANSLATE_NOOP("Popup", "Primary development only")];
             font.pixelSize: 12 * dpiScale;
             width: parent.width;
         }
     }
     Label {
         position: Label.LeftPosition;
-        text: "Gamma curve for R3D conversion";
+        text: qsTr("Gamma curve for RAW conversion");
         visible: r3dConvertFormatLabel.visible;
         ComboBox {
             id: r3dGammaCurve;
@@ -283,7 +234,7 @@ MenuItem {
     }
     Label {
         position: Label.LeftPosition;
-        text: "Color space for R3D conversion";
+        text: qsTr("Color space for RAW conversion");
         visible: r3dConvertFormatLabel.visible;
         ComboBox {
             id: r3dColorSpace;
@@ -295,7 +246,7 @@ MenuItem {
     }
     Label {
         position: Label.LeftPosition;
-        text: "Additional REDline params";
+        text: qsTr("Additional REDline params");
         visible: r3dConvertFormatLabel.visible;
         TextField {
             id: r3dRedlineParams;

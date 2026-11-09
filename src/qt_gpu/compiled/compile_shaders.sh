@@ -44,6 +44,7 @@ do
         fi
 
         eval "$QSB -o undistort_$i$d.frag.qsb tmp.frag"
+        eval "$QSB -D CALIBRATION_LUT -o undistort_$i${d}_lut.frag.qsb tmp.frag"
         rm tmp.frag
     done
 done

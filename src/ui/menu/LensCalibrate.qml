@@ -21,6 +21,29 @@ MenuItem {
     property alias infoList: infoList;
     property alias maxSharpness: maxSharpness;
     property var calibrationInfo: ({});
+    property int lutChoice: 0;
+    property string customLut: "";
+    property string detectedLut: "";
+    property string appliedLut: "";
+    readonly property var lutIds: ["DJI_OSMO_DlogM", "DJI_Pocket4P_Dlog", "DJI_Pocket4P_Dlog2", "Gopro_Mission1_GPLOG2", "Nikon_Log3G10", "Nikon_NLog", "Panasonic_LogC3", "Panasonic_Vlog", "Sony_Slog3"];
+    readonly property var lutNames: ["DJI Osmo D-Log M", "DJI Pocket 4P D-Log", "DJI Pocket 4P D-Log2", "GoPro Mission 1 GP-Log2", "Nikon Log3G10", "Nikon N-Log", "Panasonic LogC3", "Panasonic V-Log", "Sony S-Log3"];
+
+    function lutSource(choice: int): string {
+        return choice === 0 ? detectedLut : choice === 1 ? "" : choice === 11 ? customLut : lutIds[choice - 2];
+    }
+    function applyLut(choice: int): bool {
+        const source = lutSource(choice);
+        if (!controller.set_calibration_lut(source)) return false;
+        lutChoice = choice;
+        lutSelect.currentIndex = choice;
+        if (source !== appliedLut) {
+            infoList.rms = 0;
+            infoList.model = ({});
+        }
+        appliedLut = source;
+        calibrator_window.videoArea.vid.forceRedraw();
+        return true;
+    }
     // OpenCV's random sets of frames are what runs: its method, on a model OpenCV has (`LensCalibrator::calibrate`)
     readonly property bool opencvSearch: calibMethod.currentIndex == 0 && calibModel.currentIndex != 2;
 
@@ -59,6 +82,10 @@ MenuItem {
     function applyCalibrationChoice(): void {
         controller.calibration_model = calibModel.currentIndex;
         controller.calibration_method = calibMethod.currentIndex;
+        detectedLut = "";
+        appliedLut = "";
+        // A custom file may have been removed since the previous clip. Its load error is shown by the controller.
+        if (!applyLut(lutChoice)) applyLut(1);
     }
     function resetMetadata(): void {
         calib.calibrationInfo = {
@@ -94,6 +121,11 @@ MenuItem {
     Connections {
         target: controller;
         function onTelemetry_loaded(is_main_video: bool, filename: string, camera: string, additional_data: var): void {
+            if (!is_main_video) return;
+            const id = additional_data.camera_identifier || {};
+            const recording = additional_data.recording_settings || {};
+            detectedLut = controller.detect_calibration_lut(id.brand || "", id.model || "", recording["Gamma equation"] || "");
+            if (lutChoice === 0) applyLut(0);
             shutter.value = Math.abs(additional_data.frame_readout_time);
             shutterCb.checked = Math.abs(additional_data.frame_readout_time) > 0;
             if (additional_data.frame_readout_direction) {
@@ -206,6 +238,45 @@ MenuItem {
         onClicked: {
             processingResolution.currentIndexChanged();
             controller.start_autocalibrate(maxPoints.value, everyNthFrame.value, iterations.value, maxSharpness.value, -1, noMarker.checked);
+        }
+    }
+
+    Label {
+        position: Label.LeftPosition;
+        text: qsTr("Calibration LUT");
+        tooltip: qsTr("Transform decoded log footage before detecting the calibration pattern. Choose a LUT that matches the decoded footage's gamma and gamut.");
+        ComboBox {
+            id: lutSelect;
+            width: parent.width;
+            model: [qsTr("Auto detect"), qsTr("None")].concat(calib.lutNames).concat([calib.customLut ? filesystem.get_filename(calib.customLut) : qsTr("Custom LUT…")]);
+            onActivated: index => {
+                if (index === 11) {
+                    currentIndex = calib.lutChoice;
+                    lutDialog.open();
+                } else if (!calib.applyLut(index)) currentIndex = calib.lutChoice;
+            }
+        }
+    }
+    LinkButton {
+        text: qsTr("Browse LUT…");
+        onClicked: lutDialog.open();
+    }
+    InfoMessageSmall {
+        show: true;
+        text: (calib.lutChoice === 0 ? (calib.detectedLut ? qsTr("Detected: %1.").arg(calib.lutNames[calib.lutIds.indexOf(calib.detectedLut)]) : qsTr("No supported log gamma detected. Select a LUT if needed.")) + "\n" : "")
+            + qsTr("Applies to calibration and GPU preview. Changing the LUT clears detected patterns; run calibration again.");
+    }
+    FileDialog {
+        id: lutDialog;
+        title: qsTr("Choose a calibration LUT");
+        fileMode: FileDialog.OpenFile;
+        nameFilters: [qsTr("3D LUT files") + " (*.cube *.Cube *.CUBE)"];
+        type: "calibration-lut";
+        onAccepted: {
+            if (controller.set_calibration_lut(selectedFile.toString())) {
+                calib.customLut = selectedFile.toString();
+                calib.applyLut(11);
+            }
         }
     }
 
@@ -416,7 +487,7 @@ MenuItem {
     CheckBox {
         id: uploadProfile;
         text: qsTr("Upload lens profile to the database");
-        checked: true;
+        checked: false;
     }
     AdvancedSection {
         Label {

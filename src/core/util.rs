@@ -11,36 +11,38 @@ pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 /// The video's size, frame rate, duration and rotation, as gyroflow's player decodes the file (`load_video_file`, the
 /// plugins' footage): telemetry-parser's, and a Blackmagic RAW clip timed as Blackmagic's SDK presents it
 /// (`braw_clip_timing`)
-pub fn get_video_metadata<T: Read + Seek>(stream: &mut T, filesize: usize, url: &str) -> std::result::Result<telemetry_parser::util::VideoMetadata, crate::GyroflowCoreError> {
+pub fn get_video_metadata<T: Read + Seek>(stream: &mut T, filesize: u64, url: &str) -> std::result::Result<telemetry_parser::util::VideoMetadata, crate::GyroflowCoreError> {
     let filename = crate::filesystem::get_filename(url);
-    let extensions = ["mp4", "mov", "braw", "insv", "360", "mxf"];
+    let extensions = ["mp4", "mov", "braw", "insv", "360", "mxf", "nev", "r3d"];
     if !extensions.into_iter().any(|ext| filename.to_ascii_lowercase().ends_with(ext)) {
         return Err(crate::GyroflowCoreError::UnsupportedFormat(filename));
     }
     let mut md = telemetry_parser::util::get_video_metadata(stream, filesize)?;
     if filename.to_ascii_lowercase().ends_with(".braw") {
-        braw_clip_timing(stream, filesize as u64, &mut md);
+        braw_clip_timing(stream, filesize, &mut md);
     }
     Ok(md)
 }
 
 /// A Blackmagic RAW clip's frame rate and duration as Blackmagic's SDK presents the clip, which decodes it in gyroflow's
-/// player and render queue (MDK's BRAW reader) and in the plugins' hosts (DaVinci Resolve): its frames at the clip's
-/// frame rate, the one they're presented at (the most common frame duration), a frame that lasts longer held for its
-/// whole frames. An off-speed recording ends with a frame that lasts until the recording's end (2370 frames of 1/24 s,
-/// then one of 197.6 s, of an 8 fps recording in a 24 fps clip), which the SDK presents as that frame held (7113 frames
-/// at 24 fps), where the frames' average rate (`VideoMetadata::fps`, 8 fps) puts frame `k` at `k / 8` s, not at the
-/// `k / 24` s it's presented at. A clip whose frames all last as long, or whose frames aren't evenly spaced from its
-/// start, is left as telemetry-parser has it
+/// player and render queue (MDK's BRAW reader) and in the plugins' hosts (DaVinci Resolve): frame `j` at `j` frames of
+/// the clip's frame rate from its start (`GetFrameRate`: the rate of the clip's most common frame duration, in every
+/// clip a camera or a cut writes), and as many frames as its duration holds whole frames of that rate, wherever its
+/// frames last longer (`GetFrameCount`). The SDK reads frame `j` where one of the clip's frames starts at that time, so
+/// one that lasts longer is held for its whole frames, and a last one shorter than that rate's isn't one of them
+/// (Blackmagic RAW SDK 6.0, on clips with such frames at their end and in their middle). An off-speed recording ends with
+/// a frame that lasts until the recording's end (2370 frames of 1/24 s, then one of 197.6 s, of an 8 fps recording in a
+/// 24 fps clip: 7113 frames at 24 fps), and a clip cut or merged from recordings has that frame wherever its cut put it,
+/// the next cut's frames after it. The frames' average rate (`VideoMetadata::fps`, 8 fps there) would put frame `k` at
+/// `k / 8` s, not at the `k / 24` s it's presented at. A clip whose frames all last as long is left as telemetry-parser
+/// has it
 fn braw_clip_timing<T: Read + Seek>(stream: &mut T, filesize: u64, md: &mut telemetry_parser::util::VideoMetadata) {
     let Some(v) = telemetry_parser::segment_table::video_frame_times(stream, filesize) else { return };
-    let Some(&last) = v.starts.last() else { return };
-    let even = v.starts.iter().enumerate().all(|(k, t)| *t == k as i64 * v.nominal);
-    if v.timescale == 0 || v.nominal <= 0 || !even || v.is_constant() { return; }
-    // The frames before the last one, and the last one held for its whole frames, at least itself
-    let frames = (v.starts.len() - 1) as f64 + ((v.end - last) / v.nominal).max(1) as f64;
+    if v.timescale == 0 || v.nominal <= 0 || v.starts.is_empty() || v.is_constant() { return; }
+    // The whole frames of the clip's rate in its duration
+    let frames = v.end / v.nominal;
     md.fps = v.timescale as f64 / v.nominal as f64;
-    md.duration_s = frames * v.nominal as f64 / v.timescale as f64;
+    md.duration_s = frames as f64 * v.nominal as f64 / v.timescale as f64;
 }
 
 pub fn compress_to_base91<T>(value: &T) -> Option<String>
@@ -187,6 +189,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nikon_raw_extensions_read_quicktime_track_timing() {
+        for codec in [b"NRAW", b"NR3D"] {
+            let mut bytes = include_bytes!("tests/fixtures/video-timing.mp4").to_vec();
+            let config = bytes.windows(4).position(|v| v == b"avcC").unwrap();
+            bytes[config..config + 4].copy_from_slice(b"free");
+            let positions: Vec<_> = bytes.windows(4).enumerate().filter_map(|(i, v)| (v == b"avc1").then_some(i)).collect();
+            assert!(!positions.is_empty());
+            for position in positions { bytes[position..position + 4].copy_from_slice(codec); }
+            for extension in ["NEV", "nev", "R3D", "r3d"] {
+                let url = crate::filesystem::path_to_url(&std::env::current_dir().unwrap().join(format!("test.{extension}")).to_string_lossy());
+                let mut stream = std::io::Cursor::new(&bytes);
+                let md = get_video_metadata(&mut stream, bytes.len(), &url).unwrap();
+                assert_eq!((md.width, md.height), (16, 16));
+                assert!((md.fps - 24000.0 / 1001.0).abs() < 1e-6);
+                assert!((md.duration_s - 2.0 * 1001.0 / 24000.0).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn nikon_raw_extensions_reject_invalid_data() {
+        for name in ["bad.NEV", "bad.R3D", "bad.NEV.bak"] {
+            let mut stream = std::io::Cursor::new(vec![0u8; 64]);
+            let url = crate::filesystem::path_to_url(&std::env::current_dir().unwrap().join(name).to_string_lossy());
+            assert!(get_video_metadata(&mut stream, 64, &url).is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires Nikon ZR camera samples"]
+    fn nikon_zr_camera_metadata() {
+        let directory = std::env::var_os("GYROFLOW_NIKON_SAMPLE_DIR").expect("set GYROFLOW_NIKON_SAMPLE_DIR");
+        for (name, frames) in [("DSC_0073.NEV", 147), ("DSC_0073.R3D", 147), ("DSC_0003.R3D", 15)] {
+            let path = std::path::Path::new(&directory).join(name);
+            let url = crate::filesystem::path_to_url(&path.to_string_lossy());
+            let mut stream = std::fs::File::open(&path).unwrap();
+            let size = stream.metadata().unwrap().len() as usize;
+            let md = get_video_metadata(&mut stream, size, &url).unwrap();
+            assert_eq!((md.width, md.height), (6060, 3410));
+            assert!((md.fps - 24000.0 / 1001.0).abs() < 1e-6);
+            assert!((md.duration_s * md.fps - frames as f64).abs() < 1e-6);
+            stream.seek(std::io::SeekFrom::Start(0)).unwrap();
+            let input = telemetry_parser::Input::from_stream(&mut stream, size, &path, |_| (), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false))).unwrap();
+            assert_eq!(input.camera_type(), "Nikon");
+            println!("{name}: {md:?}, IMU samples={}", telemetry_parser::util::normalized_imu(&input, None).unwrap().len());
+        }
+    }
+    #[test]
     fn the_closest_entry_is_less_than_max_diff_away_and_the_later_of_two() {
         let map: BTreeMap<i64, char> = [(0, 'a'), (100, 'b'), (200, 'c'), (1000, 'd')].into_iter().collect();
         assert_eq!(map.get_closest(&150, 60), Some(&'c'), "the later of two as close");
@@ -222,7 +272,7 @@ pub fn rename_calib_videos() {
             if f_name.ends_with(".MP4") {
                 let (w, h, fps, _dur) = get_video_metadata(&f_name).unwrap();
                 let mut stream = File::open(&f_name).unwrap();
-                let filesize = stream.metadata().unwrap().len() as usize;
+                let filesize = stream.metadata().unwrap().len();
 
                 let input = Input::from_stream(&mut stream, filesize, &f_name, |_|(), Arc::new(AtomicBool::new(false))).unwrap();
 

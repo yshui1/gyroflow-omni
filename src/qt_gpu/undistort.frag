@@ -62,6 +62,28 @@ layout(binding = 3) uniform sampler2D texParams;
 layout(binding = 4) uniform sampler2D texCanvas;
 layout(binding = 5) uniform sampler2D texMeshData;
 
+#ifdef CALIBRATION_LUT
+layout(binding = 6) uniform sampler2D texLut;
+layout(std140, binding = 7) uniform CalibrationLut {
+    vec4 domainMinSize;
+    vec4 domainMaxTiles;
+    vec4 mode;
+} lut;
+vec3 lut_slice(vec2 rg, float blue) {
+    float size = lut.domainMinSize.w;
+    float tiles = lut.domainMaxTiles.w;
+    vec2 tile = vec2(mod(blue, tiles), floor(blue / tiles));
+    return texture(texLut, (tile * size + rg + vec2(0.5)) / (size * tiles)).rgb;
+}
+vec4 preview_color(vec4 color) {
+    vec3 p = clamp((color.rgb - lut.domainMinSize.xyz) / (lut.domainMaxTiles.xyz - lut.domainMinSize.xyz), 0.0, 1.0) * (lut.domainMinSize.w - 1.0);
+    float b = floor(p.b);
+    return vec4(clamp(mix(lut_slice(p.rg, b), lut_slice(p.rg, min(b + 1.0, lut.domainMinSize.w - 1.0)), fract(p.b)), 0.0, 1.0), color.a);
+}
+#else
+vec4 preview_color(vec4 color) { return color; }
+#endif
+
 const vec4 colors[11] = vec4[11](
     vec4(0.0,   0.0,   0.0,     0.0), // None
     vec4(255.0, 0.0,   0.0,   255.0), // Red
@@ -232,6 +254,13 @@ void main() {
     vec2 texPos = v_texcoord.xy * vec2(params.output_width, params.output_height) + params.translation2d;
     vec2 outPos = v_texcoord.xy * vec2(params.output_width, params.output_height);
 
+#ifdef CALIBRATION_LUT
+    if (lut.mode.x > 0.5) {
+        fragColor = preview_color(texture(texIn, v_texcoord));
+        return;
+    }
+#endif
+
     if (bool(params.flags & 4)) { // Fill with background
         fragColor = params.background;
         return;
@@ -399,8 +428,8 @@ void main() {
                 pt2 *= vec2(widthf, heightf);
             }
 
-            vec4 c1 = texture(texIn, vec2(uv.x / params.width, uv.y / params.height));
-            vec4 c2 = texture(texIn, vec2(pt2.x / params.width, pt2.y / params.height));
+            vec4 c1 = preview_color(texture(texIn, vec2(uv.x / params.width, uv.y / params.height)));
+            vec4 c2 = preview_color(texture(texIn, vec2(pt2.x / params.width, pt2.y / params.height)));
             fragColor = c1 * alpha + c2 * (1.0 - alpha);
             fragColor.a = 1.0;
             if (!((pt2.x >= 0 && pt2.x < params.width) && (pt2.y >= 0 && pt2.y < params.height))) {
@@ -413,7 +442,7 @@ void main() {
         }
 
         if ((uv.x >= 0 && uv.x < frame_size.x) && (uv.y >= 0 && uv.y < frame_size.y)) {
-            fragColor = texture(texIn, vec2(uv.x / frame_size.x, uv.y / frame_size.y));
+            fragColor = preview_color(texture(texIn, vec2(uv.x / frame_size.x, uv.y / frame_size.y)));
             draw_pixel(fragColor, uv.x, uv.y, true);
             draw_pixel(fragColor, outPos.x, outPos.y, false);
             draw_safe_area(fragColor, outPos.x, outPos.y);

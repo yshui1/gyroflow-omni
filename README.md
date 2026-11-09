@@ -38,6 +38,8 @@
 </p>
 
 ## About the project
+The desktop app in this fork is named **Gryoflow (Omni)**. See [Windows build notes](docs/nikon-raw.md#windows-build) for the local build and validation.
+
 Gyroflow is an application that can stabilize your video by using motion data from a gyroscope and optionally an accelerometer. Modern cameras record that data internally (GoPro, Sony, Insta360 etc), and this application stabilizes the captured footage precisely by using them. It can also use gyro data from an external source (eg. from Betaflight blackbox).
 
 [Trailer / results video](https://www.youtube.com/watch?v=QR-SINyvNyI)
@@ -83,6 +85,29 @@ Gyroflow is an application that can stabilize your video by using motion data fr
 - Easy management of the video editor plugins from within the app
 - Ability to add an additional 3D rotation (useful for framing vertical videos)
 
+## Nikon NRAW and R3D NE (Omni desktop)
+
+Nikon NRAW (`.NEV`) and R3D NE (`.R3D`) use the RED SDK / MDK reader for preview
+and analysis. Both extensions are accepted for video metadata and lens calibration.
+NRAW files already renamed to `.R3D` also work; no rename or source-file rewrite is
+required. Separate Nikon `.R3D` clips use the normal batch-import dialog rather than
+being treated as segments of one RED camera recording.
+
+The existing SDK installer and desktop packaging use RED SDK 9.2.1. Preview and
+analysis respect **Use GPU decoding**, including CPU decoding when disabled.
+For desktop export, install a REDCINE-X PRO / REDline version that supports Nikon
+RAW. Gyroflow first converts to ProRes using the RAW conversion settings in
+Advanced, then stabilizes and encodes the result. This exports developed pixels;
+it does not encode stabilized RAW. A missing or failed REDline conversion stops
+export with an error. To keep RAW development in your editor, export a `.gyroflow`
+project including gyro data instead.
+
+Video format support does not supply motion data. The currently tested ZR clips
+have no IMU samples extracted by telemetry-parser; use a suitable lens profile and
+synchronize an external gyro source for gyro stabilization.
+
+See [Nikon support validation](docs/nikon-raw.md) for sample results, tests, and
+build prerequisites.
 ## Supported gyro sources
 - [x] GoPro (HERO 5 and later)
 - [x] Sony (a1, a7c, a7r V, a7 IV, a7s III, a9 II, a9 III, FX3, FX6, FX9, RX0 II, RX100 VII, ZV1, ZV-E10, ZV-E10 II, ZV-E1, a6700)

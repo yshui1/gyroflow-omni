@@ -6,7 +6,7 @@ import "../components/"
 
 MenuItem {
     id: root;
-    text: qsTr("Video editor plugins");
+    text: qsTr("Video editor plugins") + " (Omni)";
     iconName: "plugin";
     opened: false;
     objectName: "nlePlugins";
@@ -16,6 +16,10 @@ MenuItem {
     property bool adobe_latest: false;
     property string openfx_version: controller.nle_plugins("detect", "openfx");
     property string adobe_version: controller.nle_plugins("detect", "adobe");
+    function isNightly(version: string): bool {
+        const parts = version.split(".");
+        return parts.length === 4 && /^\d+$/.test(parts[3]) && +parts[3] > 0;
+    }
 
     Component.onCompleted: {
         controller.nle_plugins("latest_version", "");
@@ -44,8 +48,8 @@ MenuItem {
         target: controller;
         function compare_ver(version: string, existing: string): bool {
             const last_part = existing.split(".").pop();
-            const is_app_nightly = +version == version;
-            if (+last_part > 100) {
+            const is_app_nightly = /^\d+$/.test(version);
+            if (root.isNightly(existing)) {
                 // Nightly plugin is installed
                 if (is_app_nightly) {
                     return +last_part >= +version;
@@ -100,7 +104,7 @@ MenuItem {
 
     Row {
         BasicText {
-            text: 'Adobe: <b><font color="%1">%2</font></b> %3'.arg(adobe_version && latest_version? adobe_latest? "#10ee14" : "red" : "").arg(adobe_version? adobe_version : "---").arg(+adobe_version.split(".").pop() > 70? "(nightly)" : "").trim();
+            text: 'Adobe (Omni): <b><font color="%1">%2</font></b> %3'.arg(adobe_version && latest_version? adobe_latest? "#10ee14" : "red" : "").arg(adobe_version? adobe_version : "---").arg(root.isNightly(adobe_version)? qsTr("(nightly)") : "").trim();
             textFormat: Text.StyledText;
             anchors.verticalCenter: parent.verticalCenter;
         }
@@ -127,7 +131,7 @@ MenuItem {
 
     Row {
         BasicText {
-            text: 'OpenFX: <b><font color="%1">%2</font></b> %3'.arg(openfx_version && latest_version? openfx_latest? "#10ee14" : "red" : "").arg(openfx_version? openfx_version : "---").arg(+openfx_version.split(".").pop() > 70? "(nightly)" : "").trim();
+            text: 'OpenFX (Omni): <b><font color="%1">%2</font></b> %3'.arg(openfx_version && latest_version? openfx_latest? "#10ee14" : "red" : "").arg(openfx_version? openfx_version : "---").arg(root.isNightly(openfx_version)? qsTr("(nightly)") : "").trim();
             textFormat: Text.StyledText;
             anchors.verticalCenter: parent.verticalCenter;
         }
@@ -165,7 +169,7 @@ MenuItem {
 
     LinkButton {
         text: qsTr("More information");
-        onClicked: filesystem.open_file_externally("https://github.com/gyroflow/gyroflow-plugins");
+        onClicked: filesystem.open_file_externally("https://github.com/yshui1/gyroflow-plugins-omni");
         anchors.horizontalCenter: parent.horizontalCenter;
     }
 }

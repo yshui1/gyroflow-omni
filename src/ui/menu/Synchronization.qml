@@ -31,7 +31,15 @@ MenuItem {
         // This is a specific use case and I don't think we should remember that setting, especially that it's hidden under "Advanced"
         //property alias everyNthFrame: everyNthFrame.value;
 
-        Component.onCompleted: settings.init(sett);
+        Component.onCompleted: {
+            // Adopt the new factory values once for existing installations, preserving custom settings.
+            if (!settings.value("omniSyncDefaultsV1", false)) {
+                if (+settings.value("initialOffset", 0) === 0) settings.setValue("initialOffset", 0.1);
+                if (+settings.value("syncSearchSize", 5) === 5) settings.setValue("syncSearchSize", 1.0);
+                settings.setValue("omniSyncDefaultsV1", true);
+            }
+            settings.init(sett);
+        }
         function propChanged() { settings.propChanged(sett); }
     }
 
@@ -222,7 +230,8 @@ MenuItem {
             id: initialOffset;
             width: parent.width - checkNegativeInitialOffset.width;
             height: 25 * dpiScale;
-            defaultValue: 0;
+            value: 0.1;
+            defaultValue: 0.1;
             precision: 1;
             unit: qsTr("s");
         }
@@ -246,8 +255,8 @@ MenuItem {
             width: parent.width - (calculateInitialOffsetFirst.visible? calculateInitialOffsetFirst.width : 0);
             height: 25 * dpiScale;
             precision: 1;
-            value: 5;
-            defaultValue: 5;
+            value: 1.0;
+            defaultValue: 1.0;
             unit: qsTr("s");
             onValueChanged: if (calculateInitialOffsetFirst.visible) calculateInitialOffsetFirst.checked = value > 10;
         }
@@ -271,6 +280,7 @@ MenuItem {
             width: parent.width;
             height: 25 * dpiScale;
             value: 3;
+            defaultValue: 3;
             from: 1;
             to: 30;
             onValueChanged: { if (value < 1) value = 1; if (value > 500) value = 500; }

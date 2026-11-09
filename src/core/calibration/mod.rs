@@ -158,6 +158,14 @@ impl LensCalibrator {
         self.used_points.clear();
     }
 
+    /// A different color transform changes detection and sharpness, including forced frames.
+    pub fn reset_detections(&mut self) {
+        self.clear();
+        self.clear_fit();
+        self.forced_frames.clear();
+        *self.sum_sharpness.write() = 0.0;
+    }
+
     pub fn feed_frame<F>(&mut self, timestamp_us: i64, frame: i32, size: (u32, u32), org_size: (u32, u32), stride: usize, pt_scale: f32, pixels: &[u8], cancel_flag: Arc<AtomicBool>, total: usize, processed_imgs: Arc<AtomicUsize>, progress: F)
     where F: Fn((usize, usize, usize, f64, f64)) + Send + Sync + Clone + 'static {
 
