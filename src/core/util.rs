@@ -11,7 +11,7 @@ pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 /// The video's size, frame rate, duration and rotation, as gyroflow's player decodes the file (`load_video_file`, the
 /// plugins' footage): telemetry-parser's, and a Blackmagic RAW clip timed as Blackmagic's SDK presents it
 /// (`braw_clip_timing`)
-pub fn get_video_metadata<T: Read + Seek>(stream: &mut T, filesize: usize, url: &str) -> std::result::Result<telemetry_parser::util::VideoMetadata, crate::GyroflowCoreError> {
+pub fn get_video_metadata<T: Read + Seek>(stream: &mut T, filesize: u64, url: &str) -> std::result::Result<telemetry_parser::util::VideoMetadata, crate::GyroflowCoreError> {
     let filename = crate::filesystem::get_filename(url);
     let extensions = ["mp4", "mov", "braw", "insv", "360", "mxf", "nev", "r3d"];
     if !extensions.into_iter().any(|ext| filename.to_ascii_lowercase().ends_with(ext)) {
@@ -19,28 +19,30 @@ pub fn get_video_metadata<T: Read + Seek>(stream: &mut T, filesize: usize, url: 
     }
     let mut md = telemetry_parser::util::get_video_metadata(stream, filesize)?;
     if filename.to_ascii_lowercase().ends_with(".braw") {
-        braw_clip_timing(stream, filesize as u64, &mut md);
+        braw_clip_timing(stream, filesize, &mut md);
     }
     Ok(md)
 }
 
 /// A Blackmagic RAW clip's frame rate and duration as Blackmagic's SDK presents the clip, which decodes it in gyroflow's
-/// player and render queue (MDK's BRAW reader) and in the plugins' hosts (DaVinci Resolve): its frames at the clip's
-/// frame rate, the one they're presented at (the most common frame duration), a frame that lasts longer held for its
-/// whole frames. An off-speed recording ends with a frame that lasts until the recording's end (2370 frames of 1/24 s,
-/// then one of 197.6 s, of an 8 fps recording in a 24 fps clip), which the SDK presents as that frame held (7113 frames
-/// at 24 fps), where the frames' average rate (`VideoMetadata::fps`, 8 fps) puts frame `k` at `k / 8` s, not at the
-/// `k / 24` s it's presented at. A clip whose frames all last as long, or whose frames aren't evenly spaced from its
-/// start, is left as telemetry-parser has it
+/// player and render queue (MDK's BRAW reader) and in the plugins' hosts (DaVinci Resolve): frame `j` at `j` frames of
+/// the clip's frame rate from its start (`GetFrameRate`: the rate of the clip's most common frame duration, in every
+/// clip a camera or a cut writes), and as many frames as its duration holds whole frames of that rate, wherever its
+/// frames last longer (`GetFrameCount`). The SDK reads frame `j` where one of the clip's frames starts at that time, so
+/// one that lasts longer is held for its whole frames, and a last one shorter than that rate's isn't one of them
+/// (Blackmagic RAW SDK 6.0, on clips with such frames at their end and in their middle). An off-speed recording ends with
+/// a frame that lasts until the recording's end (2370 frames of 1/24 s, then one of 197.6 s, of an 8 fps recording in a
+/// 24 fps clip: 7113 frames at 24 fps), and a clip cut or merged from recordings has that frame wherever its cut put it,
+/// the next cut's frames after it. The frames' average rate (`VideoMetadata::fps`, 8 fps there) would put frame `k` at
+/// `k / 8` s, not at the `k / 24` s it's presented at. A clip whose frames all last as long is left as telemetry-parser
+/// has it
 fn braw_clip_timing<T: Read + Seek>(stream: &mut T, filesize: u64, md: &mut telemetry_parser::util::VideoMetadata) {
     let Some(v) = telemetry_parser::segment_table::video_frame_times(stream, filesize) else { return };
-    let Some(&last) = v.starts.last() else { return };
-    let even = v.starts.iter().enumerate().all(|(k, t)| *t == k as i64 * v.nominal);
-    if v.timescale == 0 || v.nominal <= 0 || !even || v.is_constant() { return; }
-    // The frames before the last one, and the last one held for its whole frames, at least itself
-    let frames = (v.starts.len() - 1) as f64 + ((v.end - last) / v.nominal).max(1) as f64;
+    if v.timescale == 0 || v.nominal <= 0 || v.starts.is_empty() || v.is_constant() { return; }
+    // The whole frames of the clip's rate in its duration
+    let frames = v.end / v.nominal;
     md.fps = v.timescale as f64 / v.nominal as f64;
-    md.duration_s = frames * v.nominal as f64 / v.timescale as f64;
+    md.duration_s = frames as f64 * v.nominal as f64 / v.timescale as f64;
 }
 
 pub fn compress_to_base91<T>(value: &T) -> Option<String>
@@ -270,7 +272,7 @@ pub fn rename_calib_videos() {
             if f_name.ends_with(".MP4") {
                 let (w, h, fps, _dur) = get_video_metadata(&f_name).unwrap();
                 let mut stream = File::open(&f_name).unwrap();
-                let filesize = stream.metadata().unwrap().len() as usize;
+                let filesize = stream.metadata().unwrap().len();
 
                 let input = Input::from_stream(&mut stream, filesize, &f_name, |_|(), Arc::new(AtomicBool::new(false))).unwrap();
 

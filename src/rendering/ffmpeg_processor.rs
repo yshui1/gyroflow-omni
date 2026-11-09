@@ -748,9 +748,13 @@ impl<'a> FfmpegProcessor<'a> {
         {
             self.video.decoder.as_mut().ok_or(Error::DecoderNotFound)?.send_eof()?;
             // self.video.decoder.as_mut().ok_or(Error::DecoderNotFound)?.flush();
-            let encoding_status = self.video.receive_and_process_video_frames(output_size, bitrate, Some(&mut octx), &mut self.ost_time_bases, start_ms, end_ms, &mut self.frame_ts)?;
-            if encoding_status == Status::Finish && self.frame_ts.range_end.is_none() {
-                self.frame_ts.end_range();
+            // Once the video of the last range ended, the decoder holds only frames past it (decoded ahead), and none of them
+            // goes in the output: the audio ends where that video ended
+            if self.frame_ts.range_end.is_none() {
+                let encoding_status = self.video.receive_and_process_video_frames(output_size, bitrate, Some(&mut octx), &mut self.ost_time_bases, start_ms, end_ms, &mut self.frame_ts)?;
+                if encoding_status == Status::Finish {
+                    self.frame_ts.end_range();
+                }
             }
             self.video.encoder.as_mut().ok_or(Error::EncoderNotFound)?.send_eof()?;
             if let Err(e) = self.video.receive_and_process_encoded_packets(&mut octx, &mut self.ost_time_bases) {
@@ -982,9 +986,10 @@ impl<'a> FfmpegProcessor<'a> {
         })
     }
 
-    pub fn get_video_info(url: &str) -> Result<VideoInfo, ffmpeg_next::Error> {
+    /// `options` for the demuxer, eg. an image sequence's (`rendering::image_sequence_options`)
+    pub fn get_video_info(url: &str, options: Option<Dictionary>) -> Result<VideoInfo, ffmpeg_next::Error> {
         let mut file = FfmpegPathWrapper::new(url, false).map_err(|_| ffmpeg_next::Error::ProtocolNotFound)?;
-        let mut dict = Dictionary::new();
+        let mut dict = options.unwrap_or_else(Dictionary::new);
         if file.path.starts_with("fd:") {
             dict.set("fd", &file.path[3..]);
             file.path = "fd:".into();
