@@ -1264,7 +1264,7 @@ Do you want to submit your profile?</source>
     <message>
       <location filename="../../src/ui/menu/LensProfile.qml" line="313"/>
       <source>Create new</source>
-      <translation>创建新的</translation>
+      <translation>新建镜头配置</translation>
     </message>
     <message>
       <location filename="../../src/ui/menu/LensProfile.qml" line="342"/>
@@ -1455,6 +1455,58 @@ Do you want to submit your profile?</source>
       <location filename="../../src/ui/menu/LensProfile.qml" line="628"/>
       <source>Distortion coefficients</source>
       <translation>畸变系数</translation>
+    </message>
+    <message>
+      <source>Choose calibrations from the same zoom lens</source>
+      <translation>选择同一支变焦镜头的标定文件</translation>
+    </message>
+    <message>
+      <source>Save zoom lens profile</source>
+      <translation>保存变焦镜头配置</translation>
+    </message>
+    <message>
+      <source>Zoom lens profile saved to %1</source>
+      <translation>变焦镜头配置已保存到 %1</translation>
+    </message>
+    <message>
+      <source>Create zoom lens profile</source>
+      <translation>创建变焦镜头配置</translation>
+    </message>
+    <message>
+      <source>Confirm the recorded focal length for each calibration.</source>
+      <translation>请确认每个标定文件对应的实际焦距。</translation>
+    </message>
+    <message>
+      <source>Focal length in millimetres for %1</source>
+      <translation>%1 的焦距（毫米）</translation>
+    </message>
+    <message>
+      <source>The profile label says %1 mm. The video identifier reports %2 mm.</source>
+      <translation>配置标注为 %1 毫米，视频标识符记录为 %2 毫米。</translation>
+    </message>
+    <message>
+      <source>Save profile…</source>
+      <translation>保存配置…</translation>
+    </message>
+    <message>
+      <source>Enter a positive focal length for %1.</source>
+      <translation>请为 %1 输入大于零的焦距。</translation>
+    </message>
+    <message>
+      <source>Create zoom profile</source>
+      <translation>创建变焦配置</translation>
+    </message>
+    <message>
+      <source>OK</source>
+      <translation>确定</translation>
+    </message>
+    <message>
+      <source>Cancel</source>
+      <translation>取消</translation>
+    </message>
+    <message>
+      <source>%1–%2 mm</source>
+      <translation>%1–%2 毫米</translation>
     </message>
   </context>
   <context>

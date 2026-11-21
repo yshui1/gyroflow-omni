@@ -448,15 +448,19 @@ MenuItem {
             profilesMenu: root;
         }
     }
-    Row {
+    Flow {
         anchors.horizontalCenter: parent.horizontalCenter;
+        // Side by side when they fit, one under the other in a narrow panel
+        width: Math.min(parent.width, openProfileButton.width + createProfileButton.width + spacing);
         spacing: 10 * dpiScale;
         Button {
+            id: openProfileButton;
             text: qsTr("Open file");
             iconName: "file-empty"
             onClicked: fileDialog.open2();
         }
         Button {
+            id: createProfileButton;
             text: qsTr("Create new");
             iconName: "plus";
             icon.width: 15 * dpiScale;

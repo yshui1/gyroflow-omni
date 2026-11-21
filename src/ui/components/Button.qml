@@ -26,6 +26,11 @@ QQC.Button {
 
     property bool fadeWhenDisabled: true;
 
+    // The style measures the label short for CJK text with an icon, and then elides it: never be narrower than the text
+    TextMetrics { id: labelMetrics; font: root.font; text: root.text; }
+    readonly property real fullContentWidth: Math.ceil(labelMetrics.advanceWidth) + (root.icon.source.toString() !== "" && root.display !== QQC.AbstractButton.TextOnly? root.icon.width + root.spacing : 0) + 2 * dpiScale;
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, Math.max(implicitContentWidth, text.length > 0? fullContentWidth : 0) + leftPadding + rightPadding);
+
     height: 35 * dpiScale;
     leftPadding: 15 * dpiScale;
     rightPadding: 15 * dpiScale;
