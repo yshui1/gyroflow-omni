@@ -3,6 +3,8 @@
 
 import QtQuick
 import QtQuick.Dialogs
+import QtQuick.Controls as QQC
+import QtQuick.Layouts
 
 import "../components/"
 
@@ -48,6 +50,143 @@ MenuItem {
     function loadFile(url: url): void {
         root.selected_manually = true;
         controller.load_lens_profile(url.toString());
+    }
+
+    FileDialog {
+        id: zoomInputs;
+        title: qsTr("Choose calibrations from the same zoom lens");
+        fileMode: FileDialog.OpenFiles;
+        nameFilters: [qsTr("Lens profiles") + " (*.json)"];
+        type: "lens";
+        onAccepted: {
+            const files = Array.from(selectedFiles, file => file.toString());
+            const result = JSON.parse(controller.inspect_zoom_calibrations(JSON.stringify(files)));
+            if (result.error) {
+                messageBox(Modal.Warning, result.error, [{ text: qsTr("OK"), accent: true }]);
+                return;
+            }
+            zoomDialog.calibrations = result.anchors;
+            zoomDialog.error = "";
+            zoomDialog.open();
+        }
+    }
+    FileDialog {
+        id: zoomOutput;
+        title: qsTr("Save zoom lens profile");
+        fileMode: FileDialog.SaveFile;
+        nameFilters: [qsTr("Lens profiles") + " (*.json)"];
+        defaultSuffix: "json";
+        type: "zoom-profile-output";
+        onAccepted: {
+            const result = controller.export_zoom_profile(selectedFile, JSON.stringify(zoomDialog.pendingAnchors));
+            if (result) {
+                zoomDialog.error = result;
+                return;
+            }
+            zoomDialog.close();
+            controller.load_profiles(true);
+            window.showNotification(Modal.Info, qsTr("Zoom lens profile saved to %1").arg(filesystem.display_url(selectedFile)), Text.PlainText);
+        }
+    }
+    QQC.Dialog {
+        id: zoomDialog;
+        anchors.centerIn: QQC.Overlay.overlay;
+        width: Math.min(560 * dpiScale, window.width - 24 * dpiScale);
+        title: qsTr("Create zoom lens profile");
+        modal: true;
+        property var calibrations: [];
+        property var pendingAnchors: [];
+        property string error: "";
+        contentItem: ColumnLayout {
+            spacing: 8 * dpiScale;
+            BasicText {
+                Layout.fillWidth: true;
+                leftPadding: 0;
+                text: qsTr("Confirm the recorded focal length for each calibration.");
+                wrapMode: Text.WordWrap;
+            }
+            QQC.ScrollView {
+                Layout.fillWidth: true;
+                Layout.preferredHeight: Math.min(zoomRows.implicitHeight, window.height * 0.45);
+                contentWidth: availableWidth;
+                clip: true;
+                ColumnLayout {
+                    id: zoomRows;
+                    width: parent.width;
+                    height: implicitHeight;
+                    spacing: 4 * dpiScale;
+                    Repeater {
+                        id: zoomFields;
+                        model: zoomDialog.calibrations;
+                        delegate: RowLayout {
+                            required property var modelData;
+                            property alias focal: focalField;
+                            Layout.fillWidth: true;
+                            BasicText {
+                                Layout.fillWidth: true;
+                                leftPadding: 0;
+                                text: modelData.name;
+                                textFormat: Text.PlainText;
+                                elide: Text.ElideMiddle;
+                                Accessible.description: text;
+                            }
+                            NumberField {
+                                id: focalField;
+                                Layout.preferredWidth: 88 * dpiScale;
+                                precision: 2;
+                                unit: "mm";
+                                value: modelData.focal_length || 0;
+                                from: 0;
+                                Accessible.name: qsTr("Focal length in millimetres for %1").arg(modelData.name);
+                                tooltip: modelData.labeled_focal_length && modelData.labeled_focal_length !== modelData.focal_length
+                                    ? qsTr("The profile label says %1 mm. The video identifier reports %2 mm.")
+                                        .arg(modelData.labeled_focal_length).arg(modelData.focal_length)
+                                    : "";
+                            }
+                        }
+                    }
+                }
+            }
+            BasicText {
+                Layout.fillWidth: true;
+                leftPadding: 0;
+                visible: !!zoomDialog.error;
+                text: zoomDialog.error;
+                textFormat: Text.PlainText;
+                wrapMode: Text.WordWrap;
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight;
+                Button { text: qsTr("Cancel"); onClicked: zoomDialog.close(); }
+                Button {
+                    text: qsTr("Save profile…");
+                    accent: true;
+                    onClicked: {
+                        const anchors = [];
+                        for (let i = 0; i < zoomFields.count; ++i) {
+                            const field = zoomFields.itemAt(i).focal;
+                            if (!field.acceptableInput || field.value <= 0) {
+                                zoomDialog.error = qsTr("Enter a positive focal length for %1.").arg(zoomDialog.calibrations[i].name);
+                                field.forceActiveFocus();
+                                return;
+                            }
+                            anchors.push([zoomDialog.calibrations[i].url, field.value]);
+                        }
+                        const result = JSON.parse(controller.zoom_profile_filename(JSON.stringify(anchors)));
+                        if (result.error) {
+                            zoomDialog.error = result.error;
+                            return;
+                        }
+                        zoomDialog.error = "";
+                        zoomDialog.pendingAnchors = anchors;
+                        const folder = controller.zoom_profile_folder() || zoomInputs.currentFolder;
+                        zoomOutput.currentFolder = folder;
+                        zoomOutput.selectedFile = filesystem.get_file_url(folder, result.filename, false);
+                        zoomOutput.open();
+                    }
+                }
+            }
+        }
     }
 
     function loadGyroflow(obj: var): void {
@@ -149,7 +288,15 @@ MenuItem {
                         "Calibrated by":   obj.calibrated_by
                     };
 
-                    if (+obj.focal_length > 0) lensInfo["Focal length"] = obj.focal_length.toFixed(2) + " mm";
+                    const zoomLengths = Object.entries(obj.interpolations || {}).map(([key, anchor]) => {
+                        const mm = +(anchor && anchor.focal_length);
+                        return Math.abs(+key - mm) < 0.000001 ? mm : 0;
+                    }).filter(mm => mm > 0);
+                    if (zoomLengths.length >= 2) {
+                        lensInfo["Focal length"] = qsTr("%1–%2 mm").arg(Math.min(...zoomLengths)).arg(Math.max(...zoomLengths));
+                    } else if (+obj.focal_length > 0) {
+                        lensInfo["Focal length"] = obj.focal_length.toFixed(2) + " mm";
+                    }
                     if (+obj.crop_factor  > 0) lensInfo["Crop factor"]  = obj.crop_factor.toFixed(2) + "x";
                     if (obj.asymmetrical) lensInfo["Asymmetrical"] = qsTr("Yes");
                     if (obj.distortion_model && obj.distortion_model != "opencv_fisheye") lensInfo["Distortion model"] = obj.distortion_model;
@@ -327,6 +474,11 @@ MenuItem {
                 }
             }
         }
+    }
+    Button {
+        anchors.horizontalCenter: parent.horizontalCenter;
+        text: qsTr("Create zoom profile");
+        onClicked: zoomInputs.open2();
     }
 
     // The checkbox below is here for a file with no profile, and in Advanced (`focalLengthOnlyAdvanced`) over an unofficial one

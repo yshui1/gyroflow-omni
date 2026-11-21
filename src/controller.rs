@@ -63,6 +63,10 @@ pub struct Controller {
     get_preset_contents: qt_method!(fn(&mut self, url_or_id: QString) -> QString),
     export_lens_profile: qt_method!(fn(&mut self, url: QUrl, info: QJsonObject, upload: bool) -> bool),
     export_lens_profile_filename: qt_method!(fn(&mut self, info: QJsonObject) -> QString),
+    inspect_zoom_calibrations: qt_method!(fn(&self, urls_json: QString) -> QString),
+    zoom_profile_filename: qt_method!(fn(&self, anchors_json: QString) -> QString),
+    export_zoom_profile: qt_method!(fn(&self, url: QUrl, anchors_json: QString) -> QString),
+    zoom_profile_folder: qt_method!(fn(&self) -> QString),
 
     set_of_method: qt_method!(fn(&self, v: u32)),
     start_autosync: qt_method!(fn(&mut self, timestamps_fract: String, sync_params: String, mode: String)),
@@ -970,6 +974,7 @@ impl Controller {
                     ));
                     additional_obj.insert("sample_rate".to_owned(),       serde_json::to_value(gyroflow_core::gyro_source::GyroSource::get_sample_rate(&*file_metadata)).unwrap());
                     let has_builtin_profile = file_metadata.lens_profile.as_ref().map(|y| y.is_object()).unwrap_or_default();
+                    let recorded_zoom_range = file_metadata.recorded_zoom_range();
                     let md_data = file_metadata.additional_data.clone();
                     // The rate the motion data was captured at, where the video presents its frames at another one, as the
                     // load decided it (`StabilizationManager::capture_frame_rate`)
@@ -981,12 +986,11 @@ impl Controller {
 
                     let camera_id = stab.camera_id.read();
 
-                    let id_str = camera_id.as_ref().map(|v| v.get_identifier_for_autoload()).unwrap_or_default();
-                    if is_main_video && !id_str.is_empty() && !has_builtin_profile {
+                    if is_main_video && !has_builtin_profile && let Some(camera) = camera_id.clone() {
                         let mut db = stab.lens_profile_db.write();
                         db.on_loaded(move |db| {
-                            if db.contains_id(&id_str) {
-                                load_lens(id_str);
+                            if let Some(id) = db.autoload_id(&camera, recorded_zoom_range) {
+                                load_lens(id);
                             }
                         });
                     }
@@ -2392,6 +2396,89 @@ impl Controller {
             },
             Err(e) => { self.error(QString::from("An error occurred: %1"), QString::from(format!("{:?}", e)), QString::default()); false }
         }
+    }
+
+    fn inspect_zoom_calibrations(&self, urls_json: QString) -> QString {
+        let inspect = || -> Result<_, String> {
+            let urls: Vec<String> = serde_json::from_str(&urls_json.to_string()).map_err(|e| e.to_string())?;
+            if urls.len() < 2 {
+                return Err("Choose at least two lens calibrations.".into());
+            }
+            urls.into_iter().map(|url| {
+                let profile = Self::read_zoom_calibration(&url)?;
+                Ok(serde_json::json!({
+                    "name": filesystem::get_filename(&url),
+                    "focal_length": profile.zoom_anchor_focal_length(),
+                    "labeled_focal_length": profile.focal_length,
+                    "url": url,
+                }))
+            }).collect::<Result<Vec<_>, String>>()
+        };
+        QString::from(match inspect() {
+            Ok(anchors) => serde_json::json!({ "anchors": anchors }),
+            Err(error) => serde_json::json!({ "error": error }),
+        }.to_string())
+    }
+
+    fn read_zoom_calibration(url: &str) -> Result<core::lens_profile::LensProfile, String> {
+        let name = filesystem::get_filename(url);
+        let json = filesystem::read_to_string(url).map_err(|e| format!("{name}: {e}"))?;
+        core::lens_profile::LensProfile::from_json(&json).map_err(|e| format!("{name}: {e}"))
+    }
+
+    fn zoom_profile_folder(&self) -> QString {
+        let folder = core::settings::data_dir().join("lens_profiles");
+        if std::fs::create_dir_all(&folder).is_ok() {
+            return QString::from(filesystem::path_to_url(&folder.to_string_lossy()));
+        }
+        QString::default()
+    }
+
+    fn build_zoom_profile(anchors_json: &str, output: Option<&str>) -> Result<core::lens_profile::LensProfile, String> {
+        let inputs: Vec<(String, f64)> = serde_json::from_str(anchors_json).map_err(|e| e.to_string())?;
+        let anchors = inputs.into_iter().map(|(url, mm)| {
+            if output.is_some_and(|path| url == path || filesystem::is_same_file(&url, path).unwrap_or_default()) {
+                return Err("Choose an output file separate from the input calibrations.".to_owned());
+            }
+            Ok((mm, Self::read_zoom_calibration(&url)?))
+        }).collect::<Result<Vec<_>, String>>()?;
+        core::lens_profile::LensProfile::from_zoom_anchors(anchors)
+    }
+
+    fn zoom_profile_filename(&self, anchors_json: QString) -> QString {
+        QString::from(match Self::build_zoom_profile(&anchors_json.to_string(), None) {
+            Ok(profile) => {
+                let title = profile.name.replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+                let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+                let size = profile.calib_dimension;
+                let fps = if profile.fps > 0.0 { format!(" {:.3}fps", profile.fps) } else { String::new() };
+                serde_json::json!({ "filename": format!("{title} {}x{}{fps}.json", size.w, size.h) })
+            }
+            Err(error) => serde_json::json!({ "error": error }),
+        }.to_string())
+    }
+
+    fn export_zoom_profile(&self, url: QUrl, anchors_json: QString) -> QString {
+        let output = util::qurl_to_encoded(url);
+        let save = || -> Result<(), String> {
+            let profile = Self::build_zoom_profile(&anchors_json.to_string(), Some(&output))?;
+            let json = profile.get_json().map_err(|e| e.to_string())?;
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                let target = filesystem::output_target(&output, filesystem::Overwrite::Rename).map_err(|e| e.to_string())?;
+                let mut temp = filesystem::TempOutput::create(&output, target, |filename, attempt| {
+                    let mut name = filename.to_os_string();
+                    name.push(format!(".{attempt}.part"));
+                    name
+                }).map_err(|e| e.to_string())?;
+                std::io::Write::write_all(temp.file(), json.as_bytes()).map_err(|e| e.to_string())?;
+                temp.publish().map_err(|e| e.to_string())?;
+            }
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            filesystem::write(&output, json.as_bytes()).map_err(|e| e.to_string())?;
+            Ok(())
+        };
+        QString::from(save().err().unwrap_or_default())
     }
 
     fn load_profiles(&self, reload_from_disk: bool) {

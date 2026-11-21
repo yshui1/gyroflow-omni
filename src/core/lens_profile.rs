@@ -85,6 +85,90 @@ pub struct LensProfile {
 }
 
 impl LensProfile {
+    fn zoom_lens_model(&self) -> &str {
+        let model = self.lens_model.trim();
+        if let Some(mm) = self.focal_length {
+            if let Some(base) = model.strip_suffix(&format!(" {mm:.2} mm")) {
+                return base;
+            }
+        }
+        model
+    }
+
+    /// Sony's calibration label can be edited independently of the video identifier.
+    pub fn zoom_anchor_focal_length(&self) -> Option<f64> {
+        let compact = |text: &str| text.replace(' ', "").to_lowercase();
+        let prefix = format!("{}-{}-{}-", compact(&self.camera_brand), compact(&self.camera_model), compact(self.zoom_lens_model()));
+        let from_identifier = (self.camera_brand.eq_ignore_ascii_case("Sony") && !self.zoom_lens_model().is_empty())
+            .then(|| self.identifier.strip_prefix(&prefix)?.split('-').next()?.strip_suffix("mm")?.parse::<f64>().ok())
+            .flatten();
+        let valid = |mm: &f64| mm.is_finite() && *mm > 0.0;
+        from_identifier.filter(valid).or_else(|| self.focal_length.filter(valid))
+    }
+
+    /// Builds a self-contained profile whose interpolation keys are recorded focal lengths in mm.
+    pub fn from_zoom_anchors(mut anchors: Vec<(f64, Self)>) -> Result<Self, String> {
+        if anchors.len() < 2 {
+            return Err("Choose at least two lens calibrations.".into());
+        }
+        if anchors.iter().any(|(mm, _)| !mm.is_finite() || *mm <= 0.0) {
+            return Err("Enter a positive focal length for each calibration.".into());
+        }
+        anchors.sort_by(|a, b| a.0.total_cmp(&b.0));
+        if anchors.windows(2).any(|a| (a[0].0 * 1e6).round() as i64 == (a[1].0 * 1e6).round() as i64) {
+            return Err("Each calibration needs a different focal length.".into());
+        }
+        let (first_mm, first) = &anchors[0];
+        let last_mm = anchors.last().unwrap().0;
+        let dimensions = |p: &Self| (p.calib_dimension.w, p.calib_dimension.h, p.orig_dimension.w, p.orig_dimension.h);
+        let model = first.distortion_model.as_deref().unwrap_or("opencv_fisheye");
+        let same_name = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
+        let mut interpolations = serde_json::Map::new();
+        for (mm, p) in &anchors {
+            let matrix = &p.fisheye_params.camera_matrix;
+            let coeffs = &p.fisheye_params.distortion_coeffs;
+            if p.interpolations.is_some() || p.calibrator_version.is_empty() || p.calib_dimension.w == 0 || p.calib_dimension.h == 0
+                || matrix.len() != 3 || matrix[0][0] <= 0.0 || matrix[1][1] <= 0.0
+                || !matrix.iter().flatten().all(|x| x.is_finite()) || coeffs.is_empty() || coeffs.len() > 24
+                || !coeffs.iter().all(|x| x.is_finite()) {
+                return Err(format!("The {mm} mm file must contain a single valid lens calibration."));
+            }
+            if !same_name(&p.camera_brand, &first.camera_brand)
+                || !same_name(&p.camera_model, &first.camera_model)
+                || !same_name(p.zoom_lens_model(), first.zoom_lens_model()) {
+                return Err(format!("The {mm} mm file names a different camera or lens."));
+            }
+            if dimensions(p) != dimensions(first) || p.camera_setting != first.camera_setting
+                || (p.fps * 1000.0).round() != (first.fps * 1000.0).round()
+                || p.input_horizontal_stretch != first.input_horizontal_stretch
+                || p.input_vertical_stretch != first.input_vertical_stretch
+                || p.crop != first.crop || p.asymmetrical != first.asymmetrical
+                || p.digital_lens != first.digital_lens || p.digital_lens_params != first.digital_lens_params
+                || p.distortion_model.as_deref().unwrap_or("opencv_fisheye") != model
+                || coeffs.len() != first.fisheye_params.distortion_coeffs.len() {
+                return Err(format!("The {mm} mm file uses a different recording mode or distortion model."));
+            }
+            interpolations.insert(mm.to_string(), serde_json::json!({
+                "camera_matrix": matrix,
+                "distortion_coeffs": coeffs,
+                "focal_length": mm,
+            }));
+        }
+        let mut profile = first.clone();
+        profile.lens_model = first.zoom_lens_model().to_owned();
+        profile.name = format!("{} {} {} ({first_mm}-{last_mm} mm)", first.camera_brand, first.camera_model, profile.lens_model);
+        profile.identifier = format!("{}-zoom-{first_mm}-{last_mm}", first.identifier);
+        if first.identifier.is_empty() {
+            profile.identifier.clear();
+        }
+        profile.official = false;
+        profile.compatible_settings.clear();
+        profile.focal_length = Some(*first_mm);
+        profile.interpolations = Some(interpolations.into());
+        profile.parsed_interpolations.clear();
+        Ok(profile)
+    }
+
     pub fn init(&mut self) {
         if !self.fisheye_params.distortion_coeffs.is_empty() && !self.distortion_model.as_deref().is_some_and(|x| x == "gopro") {
             let distortion_model = DistortionModel::from_name(self.distortion_model.as_deref().unwrap_or("opencv_fisheye"));
@@ -633,6 +717,17 @@ impl LensProfile {
     /// Whether the profile carries calibrations at several lens positions (`resolve_interpolations` must have run)
     pub fn has_interpolations(&self) -> bool {
         !self.parsed_interpolations.is_empty()
+    }
+
+    /// Only count keys that represent a focal length, since some profiles interpolate over a crop or lens position.
+    pub fn zoom_focal_range(&self) -> Option<(f64, f64)> {
+        let mut lengths = self.parsed_interpolations.iter().filter_map(|(key, p)| {
+            let mm = p.focal_length.filter(|f| f.is_finite() && *f > 0.0)?;
+            ((*key as f64 / 1e6 - mm).abs() <= 0.000001).then_some(mm)
+        });
+        let first = lengths.next()?;
+        let last = lengths.next_back()?;
+        (last > first).then_some((first, last))
     }
 
     /// Hash of everything the per-frame projection reads from the profile (`FrameTransform::get_lens_data_at_timestamp`

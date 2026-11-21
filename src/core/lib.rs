@@ -2887,22 +2887,22 @@ impl StabilizationManager {
             *self.camera_id.write() = None;
             let _ = self.load_gyro_data(stream, filesize, url, true, &Default::default(), |_|(), Arc::new(AtomicBool::new(false)));
 
-            let has_builtin_profile = {
+            let (has_builtin_profile, recorded_zoom_range) = {
                 let gyro = self.gyro.read();
                 let file_metadata = gyro.file_metadata.read();
-                file_metadata.lens_profile.as_ref().map(|y| y.is_object()).unwrap_or_default()
+                (file_metadata.lens_profile.as_ref().is_some_and(|y| y.is_object()), file_metadata.recorded_zoom_range())
             };
 
-            let id_str = self.camera_id.read().as_ref().map(|v| v.get_identifier_for_autoload()).unwrap_or_default();
-            if !id_str.is_empty() && !has_builtin_profile {
+            let camera = self.camera_id.read().clone();
+            if !has_builtin_profile && let Some(camera) = camera.filter(|c| !c.identifier.is_empty()) {
                 if !self.lens_profile_db.read().loaded {
                     let mut db = self.lens_profile_db.write();
                     db.load_all();
                 }
                 // Not held over `load_lens_profile`, which reads the database again: a second read of a parking_lot lock
                 // this thread holds deadlocks as soon as a writer queues up in between
-                let in_db = self.lens_profile_db.read().contains_id(&id_str);
-                if in_db {
+                let id_str = self.lens_profile_db.read().autoload_id(&camera, recorded_zoom_range);
+                if let Some(id_str) = id_str {
                     match self.load_lens_profile(&id_str) {
                         Ok(_) => {
                             let (fr, frd) = { let lens = self.lens.read(); (lens.frame_readout_time, lens.frame_readout_direction) };

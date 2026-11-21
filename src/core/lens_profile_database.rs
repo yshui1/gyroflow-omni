@@ -36,6 +36,61 @@ pub struct LensProfileDatabase {
     pub loaded: bool,
     pub version: u32,
 }
+
+#[cfg(test)]
+mod zoom_profile_tests {
+    use super::*;
+    use crate::camera_identifier::CameraIdentifier;
+
+    #[test]
+    fn zoom_profile_exports_and_matches_local_recording_mode() {
+        let calibration = |label: i32, recorded: i32, fx: f64| LensProfile::from_value(serde_json::json!({
+            "camera_brand": "Sony", "camera_model": "ILCE-9M3",
+            "lens_model": format!("E 28-75mm F2.8 A063 {label}.00 mm"),
+            "identifier": format!("sony-ilce-9m3-e28-75mmf2.8a063-{recorded}.00mm-3840x2160@23976"),
+            "calib_dimension": { "w": 3840, "h": 2160 },
+            "calibrator_version": "1.7.0", "focal_length": label, "fps": 23.976,
+            "fisheye_params": {
+                "camera_matrix": [[fx, 0.0, 1920.0], [0.0, fx, 1080.0], [0.0, 0.0, 1.0]],
+                "distortion_coeffs": [0.25, 0.0, 0.0, 0.0]
+            }
+        })).unwrap();
+        let wide = calibration(28, 28, 3100.0);
+        let middle = calibration(50, 49, 5200.0);
+        let tele = calibration(75, 75, 7800.0);
+        assert_eq!(middle.zoom_anchor_focal_length(), Some(49.0));
+        assert!(LensProfile::from_zoom_anchors(vec![(28.0, wide.clone()), (28.0, middle.clone())]).is_err());
+        let mut other_mode = tele.clone();
+        other_mode.fps = 59.94;
+        assert!(LensProfile::from_zoom_anchors(vec![(28.0, wide.clone()), (75.0, other_mode)]).is_err());
+
+        let combined = LensProfile::from_zoom_anchors(vec![(75.0, tele), (49.0, middle), (28.0, wide)]).unwrap();
+        let zoom_id = combined.identifier.clone();
+        let mut combined = LensProfile::from_json(&combined.get_json().unwrap()).unwrap();
+        let mut db = LensProfileDatabase::default();
+        combined.resolve_interpolations(&db);
+        assert_eq!(combined.zoom_focal_range(), Some((28.0, 75.0)));
+        assert_eq!(combined.get_interpolated_lens_at(40.0).fisheye_params.camera_matrix[0][0], 4300.0);
+
+        let local = std::path::Path::new("local/lens_profiles");
+        combined.path_to_file = local.join("zoom.json").to_string_lossy().into_owned();
+        db.map.insert(zoom_id.clone(), combined);
+        let exact = calibration(40, 40, 4400.0);
+        let mut camera = CameraIdentifier {
+            brand: "Sony".into(), model: "ILCE-9M3".into(), lens_model: "E 28-75mm F2.8 A063".into(),
+            video_width: 3840, video_height: 2160, fps: 23976, identifier: exact.identifier.clone(),
+            ..Default::default()
+        };
+        assert_eq!(db.autoload_id_from(&camera, Some((40.0, 40.0)), local), Some(zoom_id.clone()));
+        db.map.insert(exact.identifier.clone(), exact);
+        assert_eq!(db.autoload_id_from(&camera, Some((40.0, 40.0)), local), Some(camera.identifier.clone()));
+        assert_eq!(db.autoload_id_from(&camera, Some((40.0, 74.0)), local), Some(zoom_id));
+        assert_eq!(db.autoload_id_from(&camera, Some((40.0, 80.0)), local), Some(camera.identifier.clone()));
+        camera.fps = 59940;
+        camera.identifier = "other-mode".into();
+        assert_eq!(db.autoload_id_from(&camera, Some((40.0, 74.0)), local), None);
+    }
+}
 impl Clone for LensProfileDatabase {
     fn clone(&self) -> Self {
         Self { map: self.map.clone(), preset_map: self.preset_map.clone(), files: self.files.clone(), loaded: self.loaded, ..Default::default() }
@@ -395,6 +450,43 @@ impl LensProfileDatabase {
     }
     pub fn contains_id(&self, id: &str) -> bool {
         self.map.contains_key(id)
+    }
+    pub fn autoload_id(&self, camera: &crate::camera_identifier::CameraIdentifier, focal_range: Option<(f64, f64)>) -> Option<String> {
+        self.autoload_id_from(camera, focal_range, &crate::settings::data_dir().join("lens_profiles"))
+    }
+    fn autoload_id_from(&self, camera: &crate::camera_identifier::CameraIdentifier, focal_range: Option<(f64, f64)>, local: &std::path::Path) -> Option<String> {
+        let id = camera.get_identifier_for_autoload();
+        if id.is_empty() { return None; }
+        let exact = self.map.contains_key(&id).then_some(id);
+        let Some((min, max)) = focal_range else { return exact; };
+        if max <= min * 1.002 && exact.is_some() {
+            return exact;
+        }
+        if camera.lens_model.trim().is_empty() {
+            return exact;
+        }
+        let lens_name = |name: &str| {
+            let name = name.trim().to_ascii_lowercase();
+            let name = if camera.brand.eq_ignore_ascii_case("Sony") {
+                name.strip_prefix("e ").or_else(|| name.strip_prefix("tamron ")).unwrap_or(&name)
+            } else { &name };
+            name.split_whitespace().collect::<String>()
+        };
+        let camera_lens = lens_name(&camera.lens_model);
+        self.map.iter().filter_map(|(key, p)| {
+            if !p.has_interpolations() || !std::path::Path::new(&p.path_to_file).starts_with(local)
+                || !p.camera_brand.eq_ignore_ascii_case(&camera.brand) || !p.camera_model.eq_ignore_ascii_case(&camera.model)
+                || lens_name(&p.lens_model) != camera_lens
+                || (p.calib_dimension.w, p.calib_dimension.h) != (camera.video_width, camera.video_height)
+                || (p.fps * 1000.0).round() as usize != camera.fps
+                || (!p.camera_setting.is_empty() && !camera.camera_setting.is_empty()
+                    && !p.camera_setting.eq_ignore_ascii_case(&camera.camera_setting)) {
+                return None;
+            }
+            let (start, end) = p.zoom_focal_range()?;
+            (min >= start - 0.0001 && max <= end + 0.0001).then_some((end - start, key))
+        }).min_by(|(a, ka), (b, kb)| a.total_cmp(b).then(ka.cmp(kb)))
+            .map(|(_, key)| key.clone()).or(exact)
     }
     pub fn get_preset_by_id(&self, id: &str) -> Option<String> {
         self.preset_map.get(id).cloned()

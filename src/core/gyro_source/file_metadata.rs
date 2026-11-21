@@ -264,6 +264,11 @@ impl FileMetadata {
     pub fn lens_focal_length_varies(&self) -> bool {
         *self.lens_variation.focal_length_mm.get_or_init(|| Self::varies(&mut self.lens_params.values().filter_map(|x| x.focal_length.map(|f| f as f64))))
     }
+    pub fn recorded_zoom_range(&self) -> Option<(f64, f64)> {
+        let range = self.lens_positions.values().filter(|f| f.is_finite() && **f > 0.0)
+            .fold((f64::INFINITY, 0.0_f64), |(min, max), &f| (min.min(f), max.max(f)));
+        range.0.is_finite().then_some(range)
+    }
     /// Whether the lens metadata describes a focal length that changes over the clip (zoom lens, dynamic
     /// crop, interpolated lens profiles). A fixed lens reports the same value every frame and has nothing
     /// to stabilize or to chart. The pixel and the millimetre values are compared separately: an entry may

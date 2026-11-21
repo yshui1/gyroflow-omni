@@ -200,7 +200,7 @@ mod tests {
             for extension in ["NEV", "nev", "R3D", "r3d"] {
                 let url = crate::filesystem::path_to_url(&std::env::current_dir().unwrap().join(format!("test.{extension}")).to_string_lossy());
                 let mut stream = std::io::Cursor::new(&bytes);
-                let md = get_video_metadata(&mut stream, bytes.len(), &url).unwrap();
+                let md = get_video_metadata(&mut stream, bytes.len() as u64, &url).unwrap();
                 assert_eq!((md.width, md.height), (16, 16));
                 assert!((md.fps - 24000.0 / 1001.0).abs() < 1e-6);
                 assert!((md.duration_s - 2.0 * 1001.0 / 24000.0).abs() < 1e-6);
@@ -225,7 +225,7 @@ mod tests {
             let path = std::path::Path::new(&directory).join(name);
             let url = crate::filesystem::path_to_url(&path.to_string_lossy());
             let mut stream = std::fs::File::open(&path).unwrap();
-            let size = stream.metadata().unwrap().len() as usize;
+            let size = stream.metadata().unwrap().len();
             let md = get_video_metadata(&mut stream, size, &url).unwrap();
             assert_eq!((md.width, md.height), (6060, 3410));
             assert!((md.fps - 24000.0 / 1001.0).abs() < 1e-6);

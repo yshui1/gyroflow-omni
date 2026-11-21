@@ -1429,19 +1429,19 @@ impl RenderQueue {
                                     }
                                 }
 
-                                let has_builtin_profile = {
+                                let (has_builtin_profile, recorded_zoom_range) = {
                                     let gyro = stab.gyro.read();
                                     let file_metadata = gyro.file_metadata.read();
-                                    file_metadata.lens_profile.as_ref().map(|y| y.is_object()).unwrap_or_default()
+                                    (file_metadata.lens_profile.as_ref().is_some_and(|y| y.is_object()), file_metadata.recorded_zoom_range())
                                 };
 
                                 // Neither lock is held over `load_lens_profile`, which reads both again: a second read of a
                                 // parking_lot lock this thread holds deadlocks as soon as a writer queues up in between (the
                                 // lens database is the app's, written by every load of a main video)
-                                let id_str = stab.camera_id.read().as_ref().map(|v| v.get_identifier_for_autoload()).unwrap_or_default();
-                                if !id_str.is_empty() && !has_builtin_profile {
-                                    let in_db = stab.lens_profile_db.read().contains_id(&id_str);
-                                    if in_db {
+                                let camera = stab.camera_id.read().clone();
+                                if !has_builtin_profile && let Some(camera) = camera {
+                                    let id_str = stab.lens_profile_db.read().autoload_id(&camera, recorded_zoom_range);
+                                    if let Some(id_str) = id_str {
                                         match stab.load_lens_profile(&id_str) {
                                             Ok(_) => {
                                                 let (fr, frd) = { let lens = stab.lens.read(); (lens.frame_readout_time, lens.frame_readout_direction) };
