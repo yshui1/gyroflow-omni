@@ -737,7 +737,7 @@ Item {
                         timeline.resetTrim();
                         timeline.resetZoom();
 
-                        controller.video_file_loaded(vid);
+                        const sourceSize = controller.video_file_loaded(vid);
                         // Already now, not only once the gyro data is loaded: the video plays while it loads, and the playhead needs them
                         Qt.callLater(timeline.updateDurations);
                         window.motionData.filename = "";
@@ -747,7 +747,7 @@ Item {
                         } else {
                             controller.load_telemetry(root.loadedFileUrl, true, vid, -1, 0);
                         }
-                        vidInfo.loadFromVideoMetadata(md, vid.videoWidth, vid.videoHeight);
+                        vidInfo.loadFromVideoMetadata(md, sourceSize.width, sourceSize.height);
                         window.sync.customSyncTimestamps = [];
 
                         if (root.mergedFiles.length > 1) {

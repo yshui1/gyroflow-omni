@@ -53,7 +53,8 @@ pub struct Controller {
     init_player: qt_method!(fn(&self, player: QJSValue)),
     reset_player: qt_method!(fn(&self, player: QJSValue)),
     load_video: qt_method!(fn(&self, url: QUrl, player: QJSValue)),
-    video_file_loaded: qt_method!(fn(&self, player: QJSValue)),
+    video_file_loaded: qt_method!(fn(&self, player: QJSValue) -> qttypes::QSize),
+    source_video_size: Option<(usize, usize)>,
     load_telemetry: qt_method!(fn(&self, url: QUrl, is_video: bool, player: QJSValue, sample_index: i32, project_version: u32)),
     load_lens_profile: qt_method!(fn(&mut self, url_or_id: QString)),
     reset_lens_profile: qt_method!(fn(&mut self)),
@@ -437,6 +438,18 @@ impl Controller {
         if filename.to_ascii_lowercase().ends_with("r3d") || filename.to_ascii_lowercase().ends_with("nev") {
             custom_decoder = core::raw_video::red_decoder(self.stabilizer.gpu_decoding.load(SeqCst), &options);
         }
+        // Give MDK's X-OCN reader its own suffix so regular MXF files still use FFmpeg.
+        self.source_video_size = None;
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        if filename.to_ascii_lowercase().ends_with(".mxf") {
+            self.source_video_size = crate::external_sdk::xocn::source_size(&url);
+        }
+        let player_url = if self.source_video_size.is_some() {
+            custom_decoder = "XOCN".into();
+            format!("{url}.gyroflow-xocn")
+        } else {
+            url.clone()
+        };
         if !custom_decoder.is_empty() {
             ::log::debug!("Custom decoder: {custom_decoder}");
         }
@@ -445,7 +458,7 @@ impl Controller {
             let vid = unsafe { &mut *vid.as_ptr() }; // vid.borrow_mut()
             filesystem::stop_accessing_url(&util::qurl_to_encoded(vid.url.clone()), false);
             filesystem::start_accessing_url(&url, false);
-            vid.setUrl(QUrl::from(QString::from(url)), QString::from(custom_decoder));
+            vid.setUrl(QUrl::from(QString::from(player_url)), QString::from(custom_decoder));
         }
     }
 
@@ -827,7 +840,12 @@ impl Controller {
         })(());
     }
 
-    fn video_file_loaded(&mut self, player: QJSValue) {
+    fn player_source_size(&self, player: &MDKVideoItem) -> (usize, usize) {
+        let size = (player.videoWidth as usize, player.videoHeight as usize);
+        if size.0 > 0 { self.source_video_size.unwrap_or(size) } else { size }
+    }
+
+    fn video_file_loaded(&mut self, player: QJSValue) -> qttypes::QSize {
         let stab = self.stabilizer.clone();
 
         if let Some(vid) = player.to_qobject::<MDKVideoItem>() {
@@ -835,7 +853,7 @@ impl Controller {
             let duration_ms = vid.duration;
             let fps = vid.frameRate;
             let frame_count = vid.frameCount as usize;
-            let video_size = (vid.videoWidth as usize, vid.videoHeight as usize);
+            let video_size = self.player_source_size(vid);
 
             self.set_preview_resolution(self.preview_resolution, player);
 
@@ -843,7 +861,9 @@ impl Controller {
                 stab.init_from_video_data(duration_ms, fps, frame_count, video_size);
                 stab.set_output_size(video_size.0, video_size.1);
             }
+            return qttypes::QSize { width: video_size.0 as u32, height: video_size.1 as u32 };
         }
+        qttypes::QSize::default()
     }
 
     fn load_telemetry(&mut self, url: QUrl, is_main_video: bool, player: QJSValue, sample_index: i32, project_version: u32) {
@@ -858,7 +878,7 @@ impl Controller {
             let duration_ms = vid.duration;
             let fps = vid.frameRate;
             let frame_count = vid.frameCount as usize;
-            let video_size = (vid.videoWidth as usize, vid.videoHeight as usize);
+            let video_size = self.player_source_size(vid);
             let (load_id, cancel_flag) = self.begin_telemetry_load();
             let current_load_id = self.telemetry_load_id.clone();
             // A project import this load replaced can't reset it anymore (its results are dropped), and nothing else is loading now

@@ -148,7 +148,10 @@ fn entry() {
     if cfg!(target_os = "ios") {
         MDKVideoItem::setGlobalOption("plugins", "mdk-braw");
     } else if !cfg!(target_os = "android") {
-        MDKVideoItem::setGlobalOption("plugins", "mdk-braw:mdk-r3d");
+        let plugins = "mdk-braw:mdk-r3d";
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        let plugins = if external_sdk::xocn::enabled() { "mdk-braw:mdk-r3d:mdk-xocn" } else { plugins };
+        MDKVideoItem::setGlobalOption("plugins", plugins);
     }
     if cfg!(target_os = "linux") {
         // Init wgpu before Qt because of a bug in `khronos-egl`

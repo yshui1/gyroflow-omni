@@ -4,6 +4,8 @@
 mod braw;
 pub mod r3d;
 mod ffmpeg_gpl;
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub mod xocn;
 
 pub use ffmpeg_gpl::FfmpegGpl;
 
