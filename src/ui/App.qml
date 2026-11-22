@@ -498,8 +498,10 @@ Rectangle {
         SidePanel {
             id: rightPanel;
             visible: !videoArea.fullScreen;
+            height: parent.height - y - (websiteFooter.visible ? websiteFooter.height : 0);
             x: leftPanel.width + videoAreaCol.width;
             direction: SidePanel.HandleLeft;
+            minWidth: Math.max(100 * dpiScale, websiteLink.implicitWidth + websiteLink.anchors.rightMargin);
             maxWidth: parent.width - leftPanel.width - 50 * dpiScale;
             implicitWidth: settings.value("rightPanelSize", defaultWidth);
             onWidthChanged: settings.setValue("rightPanelSize", width);
@@ -529,6 +531,26 @@ Rectangle {
             ItemLoader { id: nlePlugins; active: controller.is_nle_installed(); sourceComponent: Component { Menu.NlePlugins { } } }
             Hr { }
             ItemLoader { sourceComponent: Component { Menu.Language { } } }
+        }
+
+        Rectangle {
+            id: websiteFooter;
+            anchors.right: parent.right;
+            anchors.bottom: parent.bottom;
+            width: rightPanel.width;
+            height: websiteLink.height + (main_window.safeAreaMargins.bottom || 0);
+            visible: rightPanel.visible;
+            color: styleBackground2;
+
+            Hr { }
+            LinkButton {
+                id: websiteLink;
+                anchors.right: parent.right;
+                anchors.rightMargin: main_window.safeAreaMargins.right || 0;
+                implicitHeight: Math.max(implicitContentHeight + topPadding + bottomPadding, (isMobile ? 44 : 28) * dpiScale);
+                text: "www.omnicinecontrol.com";
+                onClicked: Qt.openUrlExternally("https://www.omnicinecontrol.com");
+            }
         }
     }
 
