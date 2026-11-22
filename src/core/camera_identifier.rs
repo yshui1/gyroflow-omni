@@ -5,7 +5,7 @@ use serde::{ Serialize, Deserialize };
 
 use telemetry_parser::Input;
 use telemetry_parser::tags_impl::{ GetWithType, GroupId, TagId };
-use std::io::Result;
+use std::io::{Read, Result, Seek, SeekFrom};
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 #[serde(default)]
@@ -25,6 +25,26 @@ pub struct CameraIdentifier {
 }
 
 impl CameraIdentifier {
+    pub(crate) fn fill_sony_mxf_lens_model(&mut self, stream: &mut (impl Read + Seek), url: &str) {
+        if self.brand != "Sony" || !self.lens_model.trim().is_empty() { return; }
+        let filename = crate::filesystem::get_filename(url);
+        let Some((stem, ext)) = filename.rsplit_once('.') else { return; };
+        if !ext.eq_ignore_ascii_case("mxf") { return; }
+
+        let lens_model = read_sony_mxf_lens(stream).or_else(|| {
+            let folder = crate::filesystem::get_folder(url);
+            let sidecar = crate::filesystem::get_file_url(&folder, &format!("{stem}M01.xml"), false);
+            let mut xml = crate::filesystem::open_file(&sidecar, false, false).ok()?;
+            if xml.size > SONY_METADATA_LIMIT { return None; }
+            sony_xml_lens_model(xml.get_file().take(SONY_METADATA_LIMIT))
+        });
+        if let Some(lens_model) = lens_model {
+            self.lens_model = lens_model;
+            self.identifier = self.get_identifier();
+            log::debug!("Sony MXF lens identified as {:?}", self.lens_model);
+        }
+    }
+
     pub fn from_telemetry_parser(input: &Input, video_width: usize, video_height: usize, fps: f64) -> Result<Self> {
         let fps = (fps * 1000.0).round() as usize;
         let brand = input.camera_type();
@@ -223,5 +243,58 @@ impl CameraIdentifier {
 
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+const SONY_METADATA_LIMIT: u64 = 1024 * 1024;
+
+fn read_sony_mxf_lens(stream: &mut (impl Read + Seek)) -> Option<String> {
+    let position = stream.stream_position().ok()?;
+    stream.seek(SeekFrom::Start(0)).ok()?;
+    let mut header = Vec::new();
+    let result = stream.take(SONY_METADATA_LIMIT).read_to_end(&mut header);
+    stream.seek(SeekFrom::Start(position)).ok()?;
+    result.ok()?;
+
+    let start_tag = b"<NonRealTimeMeta";
+    let end_tag = b"</NonRealTimeMeta>";
+    let start = header.windows(start_tag.len()).position(|bytes| bytes == start_tag)?;
+    let xml = &header[start..];
+    let end = xml.windows(end_tag.len()).position(|bytes| bytes == end_tag)?;
+    sony_xml_lens_model(&xml[..end + end_tag.len()])
+}
+
+fn sony_xml_lens_model(xml: impl Read) -> Option<String> {
+    use xml::reader::{EventReader, XmlEvent};
+
+    let mut depth = 0;
+    let mut lens = None;
+    for event in EventReader::new(xml) {
+        match event.ok()? {
+            XmlEvent::StartElement { name, attributes, .. } => {
+                if depth == 0 && name.local_name != "NonRealTimeMeta" { return None; }
+                if depth == 1 && name.local_name == "Lens" {
+                    lens = attributes.into_iter().find(|attr| attr.name.local_name == "modelName")
+                        .map(|attr| attr.value.trim().to_owned()).filter(|value| !value.is_empty());
+                }
+                depth += 1;
+            }
+            XmlEvent::EndElement { .. } => depth -= 1,
+            _ => {}
+        }
+    }
+    lens
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_sony_mxf_lens_with_manufacturer_attribute_first() {
+        let mut stream = std::io::Cursor::new(br#"MXF<NonRealTimeMeta xmlns="urn:sony"><Lens manufacturer="" modelName="17-40mm F1.8 DC | Art 025"/></NonRealTimeMeta>MXF"#);
+        stream.set_position(2);
+        assert_eq!(read_sony_mxf_lens(&mut stream).as_deref(), Some("17-40mm F1.8 DC | Art 025"));
+        assert_eq!(stream.position(), 2);
     }
 }

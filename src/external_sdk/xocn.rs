@@ -16,6 +16,13 @@ struct Reader {
 
 static READER: OnceLock<Option<Reader>> = OnceLock::new();
 
+pub const DECODER: &str = "XOCN";
+
+// The suffix selects the Sony reader without claiming ordinary MXF files.
+pub fn player_url(url: &str) -> String {
+    format!("{url}.gyroflow-xocn")
+}
+
 fn load_reader() -> Option<Reader> {
     let dll = std::env::current_exe().ok()?.with_file_name("mdk-xocn.dll");
     if !dll.is_file() {

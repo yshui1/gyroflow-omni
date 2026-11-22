@@ -29,9 +29,6 @@ impl Drop for MDKProcessor {
 
 impl MDKProcessor {
     pub fn from_file(url: &str, decoder_options: Option<Dictionary>, gpu_edcoding: bool) -> Self {
-        gyroflow_core::filesystem::start_accessing_url(url, false);
-
-        let mut mdk = qml_video_rs::video_item::MDKVideoItem::default();
         let mut custom_decoder = String::new(); // eg. BRAW:format=rgba64le
         let mut format = ffmpeg_next::format::Pixel::RGBA;
         let filename = gyroflow_core::filesystem::get_filename(url);
@@ -47,9 +44,21 @@ impl MDKProcessor {
             format = ffmpeg_next::format::Pixel::BGRA;
             custom_decoder = gyroflow_core::raw_video::red_decoder(gpu_edcoding, &options);
         }
+        Self::open(url, url, custom_decoder, format)
+    }
+
+    #[cfg(all(feature = "opencv", target_os = "windows", target_arch = "x86_64"))]
+    pub fn from_xocn(url: &str) -> Self {
+        use crate::external_sdk::xocn;
+        Self::open(url, &xocn::player_url(url), xocn::DECODER.into(), ffmpeg_next::format::Pixel::RGBA)
+    }
+
+    fn open(url: &str, player_url: &str, custom_decoder: String, format: ffmpeg_next::format::Pixel) -> Self {
+        gyroflow_core::filesystem::start_accessing_url(url, false);
         ::log::info!("Custom decoder: {custom_decoder}");
 
-        mdk.setUrl(QUrl::from(QString::from(url)), QString::from(custom_decoder.clone()));
+        let mut mdk = qml_video_rs::video_item::MDKVideoItem::default();
+        mdk.setUrl(QUrl::from(QString::from(player_url)), QString::from(custom_decoder.clone()));
         Self {
             mdk,
             url: url.to_owned(),

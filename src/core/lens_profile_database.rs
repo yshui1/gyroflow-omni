@@ -90,6 +90,31 @@ mod zoom_profile_tests {
         camera.identifier = "other-mode".into();
         assert_eq!(db.autoload_id_from(&camera, Some((40.0, 74.0)), local), None);
     }
+
+    #[test]
+    fn sony_zoom_lens_matches_a_profile_without_the_series_suffix() {
+        let profile = LensProfile::from_value(serde_json::json!({
+            "camera_brand": "Sony", "camera_model": "ILME-FX5",
+            "lens_model": "E 17-40mm F1.8 DC", "camera_setting": "FFc 3.8K",
+            "calib_dimension": {"w": 3840, "h": 2160}, "fps": 23.976,
+            "interpolations": {"17": {"focal_length": 17.0}, "40": {"focal_length": 40.0}}
+        })).unwrap();
+        let local = std::path::Path::new("local/lens_profiles");
+        let mut db = LensProfileDatabase::default();
+        let mut profile = profile;
+        profile.resolve_interpolations(&db);
+        profile.path_to_file = local.join("sigma.json").to_string_lossy().into_owned();
+        db.map.insert("sigma".into(), profile);
+        let mut camera = CameraIdentifier {
+            brand: "Sony".into(), model: "ILME-FX5".into(),
+            lens_model: "17-40mm F1.8 DC | Art 025".into(),
+            video_width: 3840, video_height: 2160, fps: 23976, identifier: "fx5-sigma-17".into(),
+            ..Default::default()
+        };
+        assert_eq!(db.autoload_id_from(&camera, Some((17.0, 40.0)), local).as_deref(), Some("sigma"));
+        camera.lens_model = "17-40mm F1.8 DG | Art 025".into();
+        assert_eq!(db.autoload_id_from(&camera, Some((17.0, 40.0)), local), None);
+    }
 }
 impl Clone for LensProfileDatabase {
     fn clone(&self) -> Self {
@@ -454,16 +479,23 @@ impl LensProfileDatabase {
     pub fn autoload_id(&self, camera: &crate::camera_identifier::CameraIdentifier, focal_range: Option<(f64, f64)>) -> Option<String> {
         self.autoload_id_from(camera, focal_range, &crate::settings::data_dir().join("lens_profiles"))
     }
+    pub fn autoload_zoom_id(&self, camera: &crate::camera_identifier::CameraIdentifier, focal_range: Option<(f64, f64)>) -> Option<String> {
+        self.autoload_zoom_id_from(camera, focal_range, &crate::settings::data_dir().join("lens_profiles"))
+    }
     fn autoload_id_from(&self, camera: &crate::camera_identifier::CameraIdentifier, focal_range: Option<(f64, f64)>, local: &std::path::Path) -> Option<String> {
         let id = camera.get_identifier_for_autoload();
         if id.is_empty() { return None; }
         let exact = self.map.contains_key(&id).then_some(id);
-        let Some((min, max)) = focal_range else { return exact; };
-        if max <= min * 1.002 && exact.is_some() {
+        if exact.is_some() && focal_range.is_none_or(|(min, max)| max <= min * 1.002) {
             return exact;
         }
+        self.autoload_zoom_id_from(camera, focal_range, local).or(exact)
+    }
+
+    fn autoload_zoom_id_from(&self, camera: &crate::camera_identifier::CameraIdentifier, focal_range: Option<(f64, f64)>, local: &std::path::Path) -> Option<String> {
+        let (min, max) = focal_range?;
         if camera.lens_model.trim().is_empty() {
-            return exact;
+            return None;
         }
         let lens_name = |name: &str| {
             let name = name.trim().to_ascii_lowercase();
@@ -474,9 +506,14 @@ impl LensProfileDatabase {
         };
         let camera_lens = lens_name(&camera.lens_model);
         self.map.iter().filter_map(|(key, p)| {
+            let profile_lens = lens_name(&p.lens_model);
+            // Some Sony lens names have a series suffix in the metadata that older profiles omit.
+            let short_name_match = camera.brand.eq_ignore_ascii_case("Sony")
+                && (camera_lens.split_once('|').is_some_and(|(base, _)| base == profile_lens)
+                    || profile_lens.split_once('|').is_some_and(|(base, _)| base == camera_lens));
             if !p.has_interpolations() || !std::path::Path::new(&p.path_to_file).starts_with(local)
                 || !p.camera_brand.eq_ignore_ascii_case(&camera.brand) || !p.camera_model.eq_ignore_ascii_case(&camera.model)
-                || lens_name(&p.lens_model) != camera_lens
+                || (profile_lens != camera_lens && !short_name_match)
                 || (p.calib_dimension.w, p.calib_dimension.h) != (camera.video_width, camera.video_height)
                 || (p.fps * 1000.0).round() as usize != camera.fps
                 || (!p.camera_setting.is_empty() && !camera.camera_setting.is_empty()
@@ -484,9 +521,9 @@ impl LensProfileDatabase {
                 return None;
             }
             let (start, end) = p.zoom_focal_range()?;
-            (min >= start - 0.0001 && max <= end + 0.0001).then_some((end - start, key))
-        }).min_by(|(a, ka), (b, kb)| a.total_cmp(b).then(ka.cmp(kb)))
-            .map(|(_, key)| key.clone()).or(exact)
+            (min >= start - 0.0001 && max <= end + 0.0001).then_some((short_name_match, end - start, key))
+        }).min_by(|(alias_a, a, ka), (alias_b, b, kb)| alias_a.cmp(alias_b).then(a.total_cmp(b)).then(ka.cmp(kb)))
+            .map(|(_, _, key)| key.clone())
     }
     pub fn get_preset_by_id(&self, id: &str) -> Option<String> {
         self.preset_map.get(id).cloned()

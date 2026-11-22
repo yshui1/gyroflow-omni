@@ -444,11 +444,13 @@ impl Controller {
         if filename.to_ascii_lowercase().ends_with(".mxf") {
             self.source_video_size = crate::external_sdk::xocn::source_size(&url);
         }
+        let player_url = url.clone();
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
         let player_url = if self.source_video_size.is_some() {
-            custom_decoder = "XOCN".into();
-            format!("{url}.gyroflow-xocn")
+            custom_decoder = crate::external_sdk::xocn::DECODER.into();
+            crate::external_sdk::xocn::player_url(&url)
         } else {
-            url.clone()
+            player_url
         };
         if !custom_decoder.is_empty() {
             ::log::debug!("Custom decoder: {custom_decoder}");
@@ -870,6 +872,7 @@ impl Controller {
         let url = util::qurl_to_encoded(url);
         let stab = self.stabilizer.clone();
         let filename = filesystem::get_filename(&url);
+        let is_xocn = self.source_video_size.is_some();
         let mut load_options = gyroflow_core::gyro_source::FileLoadOptions::default();
         load_options.project_version = project_version as _;
 
@@ -1006,10 +1009,16 @@ impl Controller {
 
                     let camera_id = stab.camera_id.read();
 
-                    if is_main_video && !has_builtin_profile && let Some(camera) = camera_id.clone() {
+                    if is_main_video && (!has_builtin_profile || is_xocn) && let Some(camera) = camera_id.clone() {
                         let mut db = stab.lens_profile_db.write();
                         db.on_loaded(move |db| {
-                            if let Some(id) = db.autoload_id(&camera, recorded_zoom_range) {
+                            // X-OCN has uncorrected pixels. Prefer a measured local zoom profile over Sony's metadata geometry.
+                            let profile = if has_builtin_profile {
+                                db.autoload_zoom_id(&camera, recorded_zoom_range)
+                            } else {
+                                db.autoload_id(&camera, recorded_zoom_range)
+                            };
+                            if let Some(id) = profile {
                                 load_lens(id);
                             }
                         });
@@ -2153,6 +2162,7 @@ impl Controller {
 
             let input_file = stab.input_file.read().clone();
             let calibration_lut = self.calibration_lut.clone();
+            let is_xocn = self.source_video_size.is_some();
             core::run_threaded(move || {
 
                 let mut decoder_options = ffmpeg_next::Dictionary::new();
@@ -2169,7 +2179,7 @@ impl Controller {
 
                 ::log::debug!("Decoder options: {:?}", decoder_options);
                 let gpu_decoding = stab.gpu_decoding.load(SeqCst);
-                match VideoProcessor::from_file(&input_file.url, gpu_decoding, 0, Some(decoder_options)) {
+                match VideoProcessor::for_calibration(&input_file.url, gpu_decoding, decoder_options, is_xocn) {
                     Ok(mut proc) => {
                         let progress = progress.clone();
                         let err2 = err.clone();

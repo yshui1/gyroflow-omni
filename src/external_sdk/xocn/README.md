@@ -1,6 +1,6 @@
 # Sony X-OCN desktop preview
 
-The optional Windows x64 MDK reader opens Sony FX5 X-OCN family H MXF files in place. The player displays an SDR preview at half the active raster width and height and presents the first two PCM audio channels as stereo. Gyroflow uses the original MXF for motion data, timing, and source dimensions. Desktop render and optical analysis still use the existing rendering backend, which cannot decode X-OCN.
+The optional Windows x64 MDK reader opens Sony FX5 X-OCN family H MXF files in place. The player displays an SDR preview at half the active raster width and height and presents the first two PCM audio channels as stereo. Lens calibration uses the same half-resolution decode and fits the profile at the original raster size. Gyroflow uses the original MXF for motion data, timing, and source dimensions. Desktop rendering and optical synchronization require transcoded footage.
 
 ## Build and run
 

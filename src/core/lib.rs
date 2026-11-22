@@ -420,6 +420,9 @@ impl StabilizationManager {
         };
         // The parsers return what they read until then, but a cancelled load (eg. replaced by the next video) mustn't set any of it
         if cancel_flag.load(SeqCst) { return Ok(()); }
+        if let Some(camera) = md.camera_identifier.as_mut() {
+            camera.fill_sony_mxf_lens_model(stream, url);
+        }
         store_frame_times();
         // The rate the file's motion data was captured at, when the video presents its frames at another one. A
         // Blackmagic RAW clip's rates are both exact (`capture_frame_rate`), the video's as its file states it (the clip's

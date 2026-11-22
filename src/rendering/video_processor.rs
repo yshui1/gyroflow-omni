@@ -16,6 +16,15 @@ pub struct VideoProcessor<'a> {
 }
 
 impl<'a> VideoProcessor<'a> {
+    #[cfg(feature = "opencv")]
+    pub fn for_calibration(url: &str, gpu_decoding: bool, decoder_options: Dictionary, _is_xocn: bool) -> Result<Self, FFmpegError> {
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        if _is_xocn {
+            return Ok(Self { inner: Processor::Mdk(MDKProcessor::from_xocn(url)) });
+        }
+        Self::from_file(url, gpu_decoding, 0, Some(decoder_options))
+    }
+
     pub fn from_file( url: &str, gpu_decoding: bool, gpu_decoder_index: usize, decoder_options: Option<Dictionary>) -> Result<Self, FFmpegError> {
         let filename = gyroflow_core::filesystem::get_filename(url);
         if filename.to_lowercase().ends_with(".braw") || filename.to_lowercase().ends_with(".r3d") || filename.to_lowercase().ends_with(".nev") {
