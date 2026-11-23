@@ -97,11 +97,11 @@ if (-not $SkipBuild) {
     } finally { Pop-Location; Remove-Item Env:OMNI_RELEASE }
 }
 
-$files = foreach ($name in $WindowsAssets) {
+$files = @(foreach ($name in $WindowsAssets) {
     $path = Join-Path $Binaries $name
     if (-not (Test-Path -LiteralPath $path)) { throw "Missing $path" }
     $path
-}
+})
 $exe = Join-Path $Binaries 'win64/gyroflow.exe'
 if (Test-Path -LiteralPath $exe) {
     # The app also logs Qt/MDK details, so look for the version line among them.
