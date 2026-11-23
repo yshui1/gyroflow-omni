@@ -65,6 +65,8 @@ pub struct Controller {
     export_lens_profile: qt_method!(fn(&mut self, url: QUrl, info: QJsonObject, upload: bool) -> bool),
     export_lens_profile_filename: qt_method!(fn(&mut self, info: QJsonObject) -> QString),
     inspect_zoom_calibrations: qt_method!(fn(&self, urls_json: QString) -> QString),
+    /// What the last lens fit from the scene found besides the lens, as JSON (`{}` when there's none)
+    scene_calibration_details: qt_method!(fn(&self) -> QString),
     zoom_profile_filename: qt_method!(fn(&self, anchors_json: QString) -> QString),
     export_zoom_profile: qt_method!(fn(&self, url: QUrl, anchors_json: QString) -> QString),
     zoom_profile_folder: qt_method!(fn(&self) -> QString),
@@ -2096,6 +2098,12 @@ impl Controller {
     fn start_autocalibrate(&mut self, max_points: usize, every_nth_frame: usize, iterations: usize, max_sharpness: f64, custom_timestamp_ms: f64, no_marker: bool) {
         #[cfg(feature = "opencv")]
         {
+            // No chessboard to find: the scene's features are followed through every frame instead. A frame added by
+            // hand is a board's, so there's nothing to add in this mode
+            if core::calibration::CalibrationMethod::from(self.calibration_method) == core::calibration::CalibrationMethod::GyroScene {
+                if custom_timestamp_ms < -0.5 { self.start_scene_calibration(); }
+                return;
+            }
             rendering::clear_log();
 
             self.calib_in_progress = true;
@@ -2259,6 +2267,131 @@ impl Controller {
         }
     }
 
+    /// "Auto calibrate" with [`CalibrationMethod::GyroScene`](core::calibration::CalibrationMethod::GyroScene): every
+    /// frame of the trimmed range decoded small, the corners of each followed into the frame a 15th of a second later
+    /// (`gyro_scene::SceneTracker`), then the lens fitted to them against the motion data. The features and a copy of
+    /// the motion data stay with the calibrator, so another model is fitted without reading the video again
+    #[cfg(feature = "opencv")]
+    fn start_scene_calibration(&mut self) {
+        use core::calibration::gyro_scene;
+        rendering::clear_log();
+
+        let stab = self.stabilizer.clone();
+        if stab.gyro.read().quaternions.len() < 2 {
+            self.error(QString::from("Calibrating from the scene needs the camera's motion data (gyro), and this video has none."), QString::default(), QString::default());
+            return;
+        }
+        self.calib_in_progress = true;
+        self.calib_in_progress_changed();
+        self.calib_progress(0.0, 0.0, 0, 0, 0, 0.0);
+
+        let (fps, frame_count, trim_ranges_ms, trim_ratio, org_size, input_horizontal_stretch, input_vertical_stretch, device) = {
+            let params = stab.params.read();
+            let lens = stab.lens.read();
+            let stretch = |s: f64| if s > 0.01 { s } else { 1.0 };
+            (params.fps, params.frame_count, params.trim_ranges.iter().map(|x| (x.0 * params.duration_ms, x.1 * params.duration_ms)).collect::<Vec<_>>(), params.get_trim_ratio(), params.size,
+             stretch(lens.input_horizontal_stretch), stretch(lens.input_vertical_stretch), params.current_device)
+        };
+        // Followed at no more than 1080 lines, the video's own aspect (squeezed): enough detail for the corners, and the
+        // lens is measured in whole calibration pixels regardless
+        let th = org_size.1.min(1080).max(2) as u32 & !1;
+        let tw = ((org_size.0 as f64 * th as f64 / org_size.1.max(1) as f64).round() as u32).max(2) & !1;
+        let calib_size = ((org_size.0 as f64 * input_horizontal_stretch).round() as usize, (org_size.1 as f64 * input_vertical_stretch).round() as usize);
+
+        let progress = util::qt_queued_callback_mut(QPointer::from(self as &Self), |this, (ready, total, good, rms): (usize, usize, usize, f64)| {
+            this.calib_in_progress = ready < total;
+            this.calib_in_progress_changed();
+            this.calib_progress(ready as f64 / total.max(1) as f64, rms, ready, total, good, 0.0);
+            if ready >= total { this.update_calib_model(); }
+        });
+        let err = util::qt_queued_callback_mut(QPointer::from(self as &Self), |this, (msg, mut arg): (String, String)| {
+            arg.push_str("\n\n");
+            arg.push_str(&rendering::get_log());
+            this.error(QString::from(msg), QString::from(arg), QString::default());
+        });
+
+        self.cancel_flag.store(false, SeqCst);
+        let cancel_flag = self.cancel_flag.clone();
+        let total = ((frame_count as f64 * trim_ratio) as usize).max(1);
+        let input_file = stab.input_file.read().clone();
+        let calibration_lut = self.calibration_lut.clone();
+        let is_xocn = self.source_video_size.is_some();
+        let tracker = Arc::new(parking_lot::Mutex::new(gyro_scene::SceneTracker::new(core::synchronization::optical_motion::KltDevice::for_processing(device), (tw, th), fps)));
+        core::run_threaded(move || {
+            let mut decoder_options = ffmpeg_next::Dictionary::new();
+            if input_file.image_sequence_fps > 0.0 {
+                let fps = rendering::fps_to_rational(input_file.image_sequence_fps);
+                decoder_options.set("framerate", &format!("{}/{}", fps.numerator(), fps.denominator()));
+            }
+            if input_file.image_sequence_start > 0 {
+                decoder_options.set("start_number", &format!("{}", input_file.image_sequence_start));
+            }
+            let read = Arc::new(AtomicUsize::new(0));
+            let gpu_decoding = stab.gpu_decoding.load(SeqCst);
+            match VideoProcessor::for_calibration(&input_file.url, gpu_decoding, decoder_options, is_xocn) {
+                Ok(mut proc) => {
+                    let (tracker, read, progress, frame_err) = (tracker.clone(), read.clone(), progress.clone(), err.clone());
+                    proc.on_frame(move |timestamp_us, input_frame, _output_frame, converter, _rate_control| {
+                        let frame = core::frame_at_timestamp(timestamp_us as f64 / 1000.0, fps).max(0) as usize;
+                        let pixel_format = if calibration_lut.is_some() { ffmpeg_next::format::Pixel::RGB48LE } else { ffmpeg_next::format::Pixel::GRAY8 };
+                        match converter.scale(input_frame, pixel_format, tw, th) {
+                            Ok(mut small) => {
+                                let (w, h, stride) = (small.plane_width(0) as usize, small.plane_height(0) as usize, small.stride(0));
+                                let data = small.data_mut(0);
+                                // Rows `w` apart, as the tracker takes them
+                                let gray: Vec<u8> = match calibration_lut.as_ref() {
+                                    Some(lut) => lut.rgb48_to_gray(data, w, h, stride),
+                                    None => (0..h).flat_map(|y| data[y * stride..y * stride + w].iter().copied()).collect(),
+                                };
+                                tracker.lock().feed(frame, timestamp_us, &gray);
+                                let n = read.fetch_add(1, SeqCst) + 1;
+                                // Not done until the fit is
+                                progress((n.min(total - 1), total, tracker.lock().pairs.len(), 0.0));
+                            },
+                            Err(e) => frame_err(("An error occurred: %1".to_string(), e.to_string())),
+                        }
+                        Ok(())
+                    });
+                    if let Err(e) = proc.start_decoder_only(trim_ranges_ms, cancel_flag.clone()) {
+                        err(("An error occurred: %1".to_string(), e.to_string()));
+                    }
+                }
+                Err(e) => err(("An error occurred: %1".to_string(), e.to_string())),
+            }
+            let pairs = std::mem::take(&mut tracker.lock().pairs);
+            if cancel_flag.load(SeqCst) || pairs.is_empty() {
+                if !cancel_flag.load(SeqCst) {
+                    err(("An error occurred: %1".to_string(), "No features could be followed through the video.".to_string()));
+                }
+                progress((total, total, 0, Self::calibration_summary(&stab).0));
+                return;
+            }
+
+            let params = core::stabilization::ComputeParams::from_manager(&stab);
+            let observations = gyro_scene::scene_observations(&params, &pairs, (tw, th));
+            ::log::info!("Scene calibration: {} frames read, {} pairs, {} observations", read.load(SeqCst), pairs.len(), observations.len());
+            {
+                let mut lock = stab.lens_calibrator.write();
+                if let Some(cal) = lock.as_mut() {
+                    cal.clear();
+                    cal.width = calib_size.0;
+                    cal.height = calib_size.1;
+                    cal.scene_observations = Arc::new(observations);
+                    cal.scene_gyro = Some(Arc::new(stab.gyro.read().clone_for_lookups(true)));
+                    cal.scene_noise_px = calib_size.1 as f64 / th as f64;
+                }
+            }
+            match LensCalibrator::calibrate_shared(&stab.lens_calibrator, false, true) {
+                Some(Ok(fit)) => Self::show_calibration(&stab, &fit),
+                Some(Err(e)) => err(("An error occurred: %1".to_string(), format!("{:?}", e))),
+                None => { }
+            }
+            progress((total, total, pairs.len(), Self::calibration_summary(&stab).0));
+        });
+    }
+    #[cfg(not(feature = "opencv"))]
+    fn start_scene_calibration(&mut self) { }
+
     fn update_calib_model(&mut self) {
         #[cfg(feature = "opencv")]
         {
@@ -2318,7 +2451,9 @@ impl Controller {
                     let changed = cal.method != method || cal.model != model;
                     cal.method = method;
                     cal.model = model;
-                    changed && !cal.image_points.read().is_empty()
+                    // What the method fits: the scene's features, or the boards
+                    let found = if method == core::calibration::CalibrationMethod::GyroScene { !cal.scene_observations.is_empty() } else { !cal.image_points.read().is_empty() };
+                    changed && found
                 }
                 None => false
             };
@@ -2428,6 +2563,25 @@ impl Controller {
         }
     }
 
+    fn scene_calibration_details(&self) -> QString {
+        #[cfg(feature = "opencv")]
+        if let Some((c, stretch)) = self.stabilizer.lens_calibrator.read().as_ref().and_then(|cal| cal.scene_fit.clone()).map(|c| (c, self.stabilizer.lens.read().input_horizontal_stretch)) {
+            let stretch = if stretch > 0.01 { stretch } else { 1.0 };
+            return QString::from(serde_json::json!({
+                "fx": c.f.0, "fy": c.f.1,
+                "fx_sigma": c.f_sigma.0, "fy_sigma": c.f_sigma.1,
+                // The squeeze the lens really has where it was filmed: the stretch the profile de-squeezes by, times what
+                // the fit found the de-squeezed picture still has
+                "stretch": stretch, "squeeze": stretch * c.f.1 / c.f.0,
+                "rms": c.rms, "median": c.median,
+                "inliers": c.inliers, "observations": c.observations,
+                "time_offset_ms": c.time_offset_ms,
+                "max_angle_deg": c.max_angle.to_degrees(),
+                "reach_x": c.reach.0, "reach_y": c.reach.1,
+            }).to_string());
+        }
+        QString::from("{}")
+    }
     fn inspect_zoom_calibrations(&self, urls_json: QString) -> QString {
         let inspect = || -> Result<_, String> {
             let urls: Vec<String> = serde_json::from_str(&urls_json.to_string()).map_err(|e| e.to_string())?;

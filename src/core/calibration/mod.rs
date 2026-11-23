@@ -29,6 +29,7 @@ use parking_lot::RwLock;
 
 pub mod drawing;
 pub mod solver;
+pub mod gyro_scene;
 
 /// Which solver `LensCalibrator::calibrate` fits the lens with, from the boards `feed_frame` found
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,9 +41,12 @@ pub enum CalibrationMethod {
     OpenCV,
     /// [`solver`] on every frame at once, with the model's own projection, so it calibrates lenses wider than 180°
     Gyroflow,
+    /// No chessboard: [`gyro_scene`], features of a distant scene followed through the video and fitted against the
+    /// camera's motion data (`scene_observations`, `scene_gyro`)
+    GyroScene,
 }
 impl From<i32> for CalibrationMethod {
-    fn from(v: i32) -> Self { if v == 1 { Self::Gyroflow } else { Self::OpenCV } }
+    fn from(v: i32) -> Self { match v { 1 => Self::Gyroflow, 2 => Self::GyroScene, _ => Self::OpenCV } }
 }
 
 /// The lens model `LensCalibrator::calibrate` fits
@@ -115,6 +119,15 @@ pub struct LensCalibrator {
     pub all_matches: Arc<RwLock<BTreeMap<i32, Detected>>>, // frame, Detected
     pub image_points: Arc<RwLock<BTreeMap<i32, Detected>>>, // frame, Detected
     pub used_points: BTreeMap<i32, Detected>, // frame, Detected
+
+    /// [`CalibrationMethod::GyroScene`]: the features followed through the video (`gyro_scene::scene_observations`),
+    /// the motion data they're fitted against, and how many calibration pixels a pixel of the frames they were followed
+    /// in spans (their precision)
+    pub scene_observations: Arc<Vec<gyro_scene::SceneObservation>>,
+    pub scene_gyro: Option<Arc<crate::gyro_source::GyroSource>>,
+    pub scene_noise_px: f64,
+    /// What the last fit from the scene found, beyond the lens
+    pub scene_fit: Option<gyro_scene::SceneCalibration>,
 
     /// Counts the fits `calibrate_shared` started, so one that a later one overtook isn't stored over it
     #[cfg(feature = "opencv")]
@@ -268,6 +281,9 @@ impl LensCalibrator {
     }
 
     pub fn calibrate(&mut self, only_used: bool) -> Result<(), opencv::Error> {
+        if self.method == CalibrationMethod::GyroScene {
+            return self.calibrate_from_scene();
+        }
         if self.method == CalibrationMethod::Gyroflow || self.model == CalibrationModel::GenericPolynomial {
             return self.calibrate_with_solver(only_used);
         }
@@ -428,6 +444,34 @@ impl LensCalibrator {
         Ok(())
     }
 
+    /// [`CalibrationMethod::GyroScene`]: the lens from the features of the scene and the motion data, whichever model.
+    /// No board is used, so `used_points` is empty
+    fn calibrate_from_scene(&mut self) -> Result<(), opencv::Error> {
+        let fail = |msg: &str| opencv::Error::new(0, msg.to_string());
+        let gyro = self.scene_gyro.clone().ok_or_else(|| fail("Calibrating from the scene needs the camera's motion data"))?;
+        let observations = self.scene_observations.clone();
+        if observations.is_empty() {
+            return Err(fail("No features of the scene were followed through the video. Analyze it again with this method"));
+        }
+        let orientation = |frame: usize, timestamp_ms: f64| gyro.org_quat_at_frame(frame, timestamp_ms);
+        let (size, noise) = ((self.width, self.height), self.scene_noise_px);
+        let fit = match self.model {
+            CalibrationModel::OpenCVFisheye     => gyro_scene::calibrate(&OpenCVFisheye::default(),     &observations, size, &orientation, noise),
+            CalibrationModel::OpenCVStandard    => gyro_scene::calibrate(&OpenCVStandard::default(),    &observations, size, &orientation, noise),
+            CalibrationModel::GenericPolynomial => gyro_scene::calibrate(&GenericPolynomial::default(), &observations, size, &orientation, noise),
+        };
+        let Some(c) = fit else {
+            return Err(fail("Unable to calibrate the lens from the scene. It needs a distant, detailed scene and the camera turning in every direction"));
+        };
+        self.k = Matrix3::new(c.f.0, 0.0, c.c.0, 0.0, c.f.1, c.c.1, 0.0, 0.0, 1.0);
+        self.d = c.k[..c.fitted].to_vec();
+        self.fitted_model = self.model;
+        self.rms = c.rms;
+        self.used_points.clear();
+        self.scene_fit = Some(c);
+        Ok(())
+    }
+
     /// `calibrate` on the calibrator `shared` holds, without holding its lock during the fit, which can take seconds:
     /// a frame added meanwhile, or the preview drawing the boards, only waits for the copy the fit starts from and for
     /// the store. The fit runs on a pool of its own (`fit_pool`), so no job of the app's pool ends up waiting inside it
@@ -460,6 +504,7 @@ impl LensCalibrator {
             current.fitted_model = cal.fitted_model;
             current.rms          = cal.rms;
             current.used_points  = cal.used_points.clone();
+            current.scene_fit    = cal.scene_fit.clone();
         }
         Some(result.map(|()| cal))
     }
@@ -470,6 +515,7 @@ impl LensCalibrator {
         self.d.clear();
         self.rms = 0.0;
         self.used_points.clear();
+        self.scene_fit = None;
     }
 }
 

@@ -46,6 +46,8 @@ MenuItem {
     }
     // OpenCV's random sets of frames are what runs: its method, on a model OpenCV has (`LensCalibrator::calibrate`)
     readonly property bool opencvSearch: calibMethod.currentIndex == 0 && calibModel.currentIndex != 2;
+    // No chessboard: the lens from a distant scene and the camera's motion data (`CalibrationMethod::GyroScene`)
+    readonly property bool sceneMode: calibMethod.currentIndex == 2;
 
     property int videoWidth: 0;
     property int videoHeight: 0;
@@ -400,10 +402,11 @@ MenuItem {
         LinkButton {
             id: calibMethod;
             // `calibration::CalibrationMethod` as i32
-            property var options: [QT_TRANSLATE_NOOP("Popup", "OpenCV"), QT_TRANSLATE_NOOP("Popup", "Gyroflow")];
+            property var options: [QT_TRANSLATE_NOOP("Popup", "OpenCV"), QT_TRANSLATE_NOOP("Popup", "Gyroflow"), QT_TRANSLATE_NOOP("Popup", "Gyro + scene")];
             property var tooltips: ([
                 qsTr("OpenCV's own calibration of the model, on random sets of frames. Its fisheye calibration can't take a lens that sees more than 180°, and often fails close to it."),
-                qsTr("Gyroflow's own calibration, on all frames at once. With a fisheye model it also calibrates lenses that see more than 180°, and it leaves out frames that don't agree with the rest, like ones bent by the rolling shutter of a fast move.")
+                qsTr("Gyroflow's own calibration, on all frames at once. With a fisheye model it also calibrates lenses that see more than 180°, and it leaves out frames that don't agree with the rest, like ones bent by the rolling shutter of a fast move."),
+                qsTr("No chessboard: features of a distant scene followed through the video and fitted against the camera's motion data. It measures the focal length and the squeeze against the gyro, across the whole width of the frame, so it suits anamorphic lenses and any lens a chessboard can't cover.")
             ]);
             property int currentIndex: 0;
             text: qsTranslate("Popup", options[currentIndex]);
@@ -428,6 +431,10 @@ MenuItem {
     InfoMessageSmall {
         show: calibMethod.currentIndex == 0 && calibModel.currentIndex == 2;
         text: qsTr("OpenCV has no generic polynomial model, so it's calibrated with Gyroflow's method.");
+    }
+    InfoMessageSmall {
+        show: calib.sceneMode;
+        text: qsTr("Film 10 to 30 seconds handheld of a distant scene with plenty of detail (buildings, trees, a skyline: nothing much closer than 10 m), focused as you'll film. Turn the camera slowly left and right, up and down, with some roll, so that the detail crosses the whole frame. The video needs the camera's motion data, and the rolling shutter below set as the camera's.");
     }
     CheckBoxWithContent {
         id: shutterCb;
@@ -506,6 +513,8 @@ MenuItem {
         Label {
             position: Label.LeftPosition;
             text: qsTr("Analyze every n-th frame");
+            // Scene calibration follows every frame into the next ones
+            visible: !calib.sceneMode;
 
             NumberField {
                 id: everyNthFrame;
@@ -518,6 +527,7 @@ MenuItem {
         Label {
             position: Label.LeftPosition;
             text: qsTr("Sharpness limit");
+            visible: !calib.sceneMode;
 
             NumberField {
                 id: maxSharpness;
@@ -784,6 +794,7 @@ MenuItem {
         CheckBox {
             id: noMarker;
             text: qsTr("Plain chessboard pattern (previous version without dots in the middle)");
+            visible: !calib.sceneMode;
             checked: false;
             width: parent.width;
             Component.onCompleted: contentItem.wrapMode = Text.WordWrap;

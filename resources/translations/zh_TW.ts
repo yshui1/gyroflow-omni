@@ -568,6 +568,14 @@ You can increase the sharpness limit in the Advanced section.</source>
       <source>Are you sure you want to close the calibrator?</source>
       <translation>您確定要關閉校準器嗎？?</translation>
     </message>
+    <message>
+      <source>%1 frame pairs tracked</source>
+      <translation>已追蹤 %1 對幀</translation>
+    </message>
+    <message>
+      <source>Calibrating from the scene needs the camera&apos;s motion data (gyro), and this video has none.</source>
+      <translation>從場景校準需要相機的運動資料（陀螺儀），但此影片沒有。</translation>
+    </message>
   </context>
   <context>
     <name>DropTarget</name>
@@ -1123,6 +1131,14 @@ Do you want to submit your profile?</source>
       <location filename="../../src/ui/menu/LensCalibrate.qml" line="380"/>
       <source>ms</source>
       <translation>毫秒</translation>
+    </message>
+    <message>
+      <source>No chessboard: features of a distant scene followed through the video and fitted against the camera&apos;s motion data. It measures the focal length and the squeeze against the gyro, across the whole width of the frame, so it suits anamorphic lenses and any lens a chessboard can&apos;t cover.</source>
+      <translation>無需棋盤格：在影片中追蹤遠處場景的特徵點，並與相機的運動資料擬合。焦距和壓縮比以陀螺儀為基準測量，涵蓋整個畫面寬度，適合變形寬銀幕鏡頭以及棋盤格無法涵蓋的鏡頭。</translation>
+    </message>
+    <message>
+      <source>Film 10 to 30 seconds handheld of a distant scene with plenty of detail (buildings, trees, a skyline: nothing much closer than 10 m), focused as you&apos;ll film. Turn the camera slowly left and right, up and down, with some roll, so that the detail crosses the whole frame. The video needs the camera&apos;s motion data, and the rolling shutter below set as the camera&apos;s.</source>
+      <translation>手持拍攝 10 到 30 秒細節豐富的遠景（建築、樹木、天際線：盡量不要有 10 公尺以內的物體），對焦與正式拍攝時相同。緩慢地左右、上下轉動相機，並帶一些滾轉，讓細節掃過整個畫面。影片需要包含相機的運動資料，並在下方依相機設定滾動快門。</translation>
     </message>
   </context>
   <context>
@@ -2196,6 +2212,10 @@ Open &lt;b&gt;Terminal&lt;/b&gt; and enter the following command:</source>
       <location filename="../../src/ui/menu/Stabilization.qml" line="631"/>
       <source>Automatic</source>
       <translation>自動</translation>
+    </message>
+    <message>
+      <source>Gyro + scene</source>
+      <translation>陀螺儀 + 場景</translation>
     </message>
   </context>
   <context>
@@ -3702,6 +3722,30 @@ Make sure you have proper rolling shutter value set before syncing.</source>
       <location filename="../../src/ui/Calibrator.qml" line="98"/>
       <source>Average pattern sharpness</source>
       <translation>圖案平均清晰度</translation>
+    </message>
+    <message>
+      <source>Frame pairs tracked</source>
+      <translation>已追蹤幀對</translation>
+    </message>
+    <message>
+      <source>Focal length (x / y)</source>
+      <translation>焦距（x / y）</translation>
+    </message>
+    <message>
+      <source>Effective squeeze</source>
+      <translation>實際壓縮比</translation>
+    </message>
+    <message>
+      <source>Gyro time offset</source>
+      <translation>陀螺儀時間偏移</translation>
+    </message>
+    <message>
+      <source>Features used</source>
+      <translation>使用的特徵點</translation>
+    </message>
+    <message>
+      <source>Frame coverage (width × height)</source>
+      <translation>畫面涵蓋（寬 × 高）</translation>
     </message>
   </context>
   <context>

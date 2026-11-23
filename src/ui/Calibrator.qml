@@ -81,10 +81,12 @@ Window {
             Qt.callLater(controller.recompute_threaded);
         }
         function onCalib_progress(progress: real, rms: real, ready: int, total: int, good: int, sharpness: real): void {
+            // From the scene and the motion data: no patterns, `good` is the frame pairs followed
+            const scene = lensCalib.sceneMode;
             lensCalib.infoList.rms = rms;
             videoArea.videoLoader.active = progress < 1 || rms == 0;
-            videoArea.videoLoader.additional = " - " + qsTr("%1 good frames").arg(good);
-            videoArea.videoLoader.additionalLine = "<br>" + qsTr("Pattern sharpness: %1").arg(sharpness > 0? sharpness.toFixed(2) + "px" : "---");
+            videoArea.videoLoader.additional = " - " + (scene? qsTr("%1 frame pairs tracked").arg(good) : qsTr("%1 good frames").arg(good));
+            videoArea.videoLoader.additionalLine = scene? "" : "<br>" + qsTr("Pattern sharpness: %1").arg(sharpness > 0? sharpness.toFixed(2) + "px" : "---");
             videoArea.videoLoader.currentFrame = ready;
             videoArea.videoLoader.totalFrames = total;
             videoArea.videoLoader.text = progress < 1? qsTr("Analyzing %1...") : "";
@@ -94,10 +96,26 @@ Window {
                 Qt.callLater(controller.recompute_threaded);
                 let model = [];
                 model[QT_TRANSLATE_NOOP("TableList", "Reprojection error")] = rms == 0? "---" : rms.toLocaleString(Qt.locale(), "f", 5);
-                model[QT_TRANSLATE_NOOP("TableList", "Good frames")] = good;
-                model[QT_TRANSLATE_NOOP("TableList", "Average pattern sharpness")] = sharpness.toLocaleString(Qt.locale(), "f", 2) + " px";
+                if (scene) {
+                    model[QT_TRANSLATE_NOOP("TableList", "Frame pairs tracked")] = good;
+                    const d = JSON.parse(controller.scene_calibration_details());
+                    if (d.fx) {
+                        model[QT_TRANSLATE_NOOP("TableList", "Focal length (x / y)")] = d.fx.toLocaleString(Qt.locale(), "f", 1) + " / " + d.fy.toLocaleString(Qt.locale(), "f", 1) + " px";
+                        // What the lens squeezes by where it was filmed, on top of the input stretch it's de-squeezed with
+                        if (Math.abs(d.stretch - 1) > 0.01) model[QT_TRANSLATE_NOOP("TableList", "Effective squeeze")] = d.squeeze.toLocaleString(Qt.locale(), "f", 3) + "x";
+                        model[QT_TRANSLATE_NOOP("TableList", "Gyro time offset")] = d.time_offset_ms.toLocaleString(Qt.locale(), "f", 2) + " ms";
+                        model[QT_TRANSLATE_NOOP("TableList", "Features used")] = d.inliers + " / " + d.observations;
+                        model[QT_TRANSLATE_NOOP("TableList", "Frame coverage (width × height)")] = Math.round(d.reach_x * 100) + "% × " + Math.round(d.reach_y * 100) + "%";
+                    }
+                } else {
+                    model[QT_TRANSLATE_NOOP("TableList", "Good frames")] = good;
+                    model[QT_TRANSLATE_NOOP("TableList", "Average pattern sharpness")] = sharpness.toLocaleString(Qt.locale(), "f", 2) + " px";
+                }
                 lensCalib.infoList.model = model;
-                if (rms > 5) {
+                if (scene) {
+                    // A failed fit has told why itself (`error`)
+                    window.play_sound(rms > 0 && rms <= 5? "success" : "error");
+                } else if (rms > 5) {
                     window.play_sound("error");
                     if (good < 5 && sharpness < lensCalib.maxSharpness.value) {
                         const msg = sharpness > 0? qsTr("Some patterns were detected, but their average sharpness was <b>%1 px</b> and max limit is <b>%2 px</b>.").arg(sharpness.toLocaleString(Qt.locale(), "f", 2)).arg(lensCalib.maxSharpness.value.toLocaleString(Qt.locale(), "f", 2))

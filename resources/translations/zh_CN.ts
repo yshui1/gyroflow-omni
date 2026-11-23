@@ -607,6 +607,14 @@ You can increase the sharpness limit in the Advanced section.</source>
       <source>Are you sure you want to close the calibrator?</source>
       <translation>你确定要关闭校准器吗？</translation>
     </message>
+    <message>
+      <source>%1 frame pairs tracked</source>
+      <translation>已跟踪 %1 对帧</translation>
+    </message>
+    <message>
+      <source>Calibrating from the scene needs the camera&apos;s motion data (gyro), and this video has none.</source>
+      <translation>从场景校准需要相机的运动数据（陀螺仪），但此视频没有。</translation>
+    </message>
   </context>
   <context>
     <name>DropTarget</name>
@@ -1217,6 +1225,14 @@ Do you want to submit your profile?</source>
       <location filename="../../src/ui/menu/LensCalibrate.qml" line="273"/>
       <source>3D LUT files</source>
       <translation>3D LUT 文件</translation>
+    </message>
+    <message>
+      <source>No chessboard: features of a distant scene followed through the video and fitted against the camera&apos;s motion data. It measures the focal length and the squeeze against the gyro, across the whole width of the frame, so it suits anamorphic lenses and any lens a chessboard can&apos;t cover.</source>
+      <translation>无需棋盘格：在视频中跟踪远处场景的特征点，并与相机的运动数据拟合。焦距和压缩比以陀螺仪为基准测量，覆盖整个画面宽度，适合变形宽银幕镜头以及棋盘格无法覆盖的镜头。</translation>
+    </message>
+    <message>
+      <source>Film 10 to 30 seconds handheld of a distant scene with plenty of detail (buildings, trees, a skyline: nothing much closer than 10 m), focused as you&apos;ll film. Turn the camera slowly left and right, up and down, with some roll, so that the detail crosses the whole frame. The video needs the camera&apos;s motion data, and the rolling shutter below set as the camera&apos;s.</source>
+      <translation>手持拍摄 10 到 30 秒细节丰富的远景（建筑、树木、天际线：尽量不要有 10 米以内的物体），对焦与正式拍摄时相同。缓慢地左右、上下转动相机，并带一些滚转，让细节扫过整个画面。视频需要包含相机的运动数据，并在下方按相机设置卷帘快门。</translation>
     </message>
   </context>
   <context>
@@ -2321,6 +2337,10 @@ Open &lt;b&gt;Terminal&lt;/b&gt; and enter the following command:</source>
       <location filename="../../src/ui/menu/Synchronization.qml" line="373"/>
       <source>Optical analysis</source>
       <translation>光学分析</translation>
+    </message>
+    <message>
+      <source>Gyro + scene</source>
+      <translation>陀螺仪 + 场景</translation>
     </message>
   </context>
   <context>
@@ -3841,6 +3861,30 @@ The most accurate method. The optical flow and pose methods don't apply to it.</
       <location filename="../../src/ui/Calibrator.qml" line="98"/>
       <source>Average pattern sharpness</source>
       <translation>图案平均清晰度</translation>
+    </message>
+    <message>
+      <source>Frame pairs tracked</source>
+      <translation>已跟踪帧对</translation>
+    </message>
+    <message>
+      <source>Focal length (x / y)</source>
+      <translation>焦距（x / y）</translation>
+    </message>
+    <message>
+      <source>Effective squeeze</source>
+      <translation>实际压缩比</translation>
+    </message>
+    <message>
+      <source>Gyro time offset</source>
+      <translation>陀螺仪时间偏移</translation>
+    </message>
+    <message>
+      <source>Features used</source>
+      <translation>使用的特征点</translation>
+    </message>
+    <message>
+      <source>Frame coverage (width × height)</source>
+      <translation>画面覆盖（宽 × 高）</translation>
     </message>
   </context>
   <context>

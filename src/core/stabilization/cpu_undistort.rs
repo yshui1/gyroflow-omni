@@ -939,6 +939,24 @@ fn point_kernel_params(params: &ComputeParams, camera_matrix: Matrix3<f64>, dist
     }
 }
 
+/// Source pixels of `frame` (tracked in a frame of `points_dims`) as the lens sees them (`source_on_sensor`): in the
+/// lens's own pixels, de-squeezed, with what the render undoes before the lens taken off - in-body stabilization's
+/// shifts above all, which the scene calibration would otherwise take for the camera's rotation. In-body stabilization
+/// rolls the sensor about the principal point: the frame's centre while there's no lens yet
+pub fn points_on_sensor(distorted: &[(f32, f32)], timestamp_ms: f64, frame: usize, params: &ComputeParams, points_dims: (u32, u32)) -> Vec<(f32, f32)> {
+    if distorted.is_empty() { return Vec::new(); }
+    let scale = (params.width as f32 / points_dims.0.max(1) as f32, params.height as f32 / points_dims.1.max(1) as f32);
+    let full: Vec<(f32, f32)> = distorted.iter().map(|p| (p.0 * scale.0, p.1 * scale.1)).collect();
+    let (camera_matrix, distortion_coeffs, _, _, shifts, mesh, _, _, _) = FrameTransform::at_timestamp_for_points(params, &full, timestamp_ms, Some(frame), false);
+    let shifts = shifts.map(|s| if s.len() == 1 { vec![s[0]; full.len()] } else { s });
+    let mut kernel_params = point_kernel_params(params, camera_matrix, distortion_coeffs, 0.0, timestamp_ms);
+    if !(kernel_params.f[0] > 0.0 && kernel_params.f[1] > 0.0) || !kernel_params.c.iter().all(|c| c.is_finite() && *c > 0.0) {
+        let stretch = |s: f64| if s > 0.001 { s } else { 1.0 };
+        kernel_params.c = [(params.width as f64 * stretch(params.lens.input_horizontal_stretch) * 0.5) as f32, (params.height as f64 * stretch(params.lens.input_vertical_stretch) * 0.5) as f32];
+    }
+    full.iter().enumerate().map(|(i, p)| source_on_sensor(i, *p, &kernel_params, params, shifts.as_deref(), mesh.as_deref())).collect()
+}
+
 /// Source pixels -> the rays they arrived on, in the output camera's frame, as angle vectors (see
 /// `stabilization::projection`); `None` where the lens has no image of the point.
 ///
@@ -966,67 +984,7 @@ fn undistort_points_to_rays(distorted: &[(f32, f32)], kernel_params: &KernelPara
     // (zooming::fov_iterative) already runs this across frames via into_par_iter, and the
     // stmap caller passes one point at a time — so a nested par_iter would only oversubscribe.
     distorted.iter().enumerate().map(|(index, pi)| {
-        let mut x = pi.0;
-        let mut y = pi.1;
-        if params.lens.input_horizontal_stretch > 0.001 { x *= params.lens.input_horizontal_stretch as f32; }
-        if params.lens.input_vertical_stretch   > 0.001 { y *= params.lens.input_vertical_stretch as f32; }
-
-        if let Some(digital) = &params.digital_lens {
-            if let Some(pt2) = digital.undistort_point((x, y), &kernel_params) {
-                x = pt2.0;
-                y = pt2.1;
-            }
-        }
-
-        if let Some(mesh_data) = mesh.filter(|m| m.len() > 9) {
-            // FocalPlaneDistortion
-            let o = mesh_data[0] as usize; // offset to focal plane distortion data
-            if o > 0 && mesh_data.get(o).map_or(false, |x| *x > 0.0) {
-
-                let mesh_size = (mesh_data[3], mesh_data[4]);
-                let origin    = (mesh_data[5] as f32, mesh_data[6] as f32);
-                let crop_size = (mesh_data[7] as f32, mesh_data[8] as f32);
-                let stblz_grid = if mesh_data[o + 2] > 0.0 { mesh_data[o + 2] } else { mesh_size.1 / 8.0 }; // band height comes with the table
-
-                x = map_coord(x, 0.0, params.width  as f32, origin.0, origin.0 + crop_size.0);
-                y = map_coord(y, 0.0, params.height as f32, origin.1, origin.1 + crop_size.1);
-
-                let idx = (y as f64 / stblz_grid).floor().max(0.0).min(7.0) as usize;
-                let delta = y as f64 - stblz_grid * idx as f64;
-                x += (mesh_data[o + 4 + idx * 2 + 0] * delta) as f32;
-                y += (mesh_data[o + 4 + idx * 2 + 1] * delta) as f32;
-                for j in 0..idx {
-                    x += (mesh_data[o + 4 + j * 2 + 0] * stblz_grid) as f32;
-                    y += (mesh_data[o + 4 + j * 2 + 1] * stblz_grid) as f32;
-                }
-
-                x = map_coord(x, origin.0, origin.0 + crop_size.0, 0.0, params.width  as f32);
-                y = map_coord(y, origin.1, origin.1 + crop_size.1, 0.0, params.height as f32);
-            }
-
-            if mesh_data[0] > 10.0 {
-                let mesh_size = (mesh_data[3], mesh_data[4]);
-                let origin    = (mesh_data[5] as f32, mesh_data[6] as f32);
-                let crop_size = (mesh_data[7] as f32, mesh_data[8] as f32);
-
-                x = map_coord(x, 0.0, params.width  as f32, origin.0, origin.0 + crop_size.0);
-                y = map_coord(y, 0.0, params.height as f32, origin.1, origin.1 + crop_size.1);
-
-                let new_pos = crate::gyro_source::interpolate_mesh(x as f64, y as f64, (mesh_size.0, mesh_size.1), &mesh_data);
-
-                x = map_coord(new_pos.x as f32, origin.0, origin.0 + crop_size.0, 0.0, params.width  as f32);
-                y = map_coord(new_pos.y as f32, origin.1, origin.1 + crop_size.1, 0.0, params.height as f32);
-            }
-        }
-        if let Some(shift) = shift_per_point.and_then(|v| v.get(index)) {
-            // Sensor roll around the principal point first, then the sensor/lens shift (the inverse of `rotate_and_distort`)
-            let ang_rad = shift.2;
-            let cos_a = ang_rad.cos();
-            let sin_a = ang_rad.sin();
-            let (xr, yr) = (x - c.0, y - c.1);
-            x = cos_a * xr - sin_a * yr - shift.3 + shift.0 + c.0;
-            y = sin_a * xr + cos_a * yr - shift.4 + shift.1 + c.1;
-        }
+        let (x, y) = source_on_sensor(index, *pi, kernel_params, params, shift_per_point, mesh);
 
         let mut pw = ((x - c.0) / f.0, (y - c.1) / f.1); // normalized image point
         // The row's focus breathing scales the source image against the camera matrix (`at_timestamp` applies it there
@@ -1056,6 +1014,75 @@ fn undistort_points_to_rays(distorted: &[(f32, f32)], kernel_params: &KernelPara
             projection::dir_to_ray((pr[0], pr[1], pr[2]))
         })
     }).collect()
+}
+
+/// A source pixel of a frame with everything the render undoes before the lens: the input stretch, the digital lens, the
+/// mesh correction, and the sensor and lens shifts of in-body and optical stabilization (`shift_per_point`, `index` its
+/// entry). The pixel the lens model then sees, in the lens's own frame (de-squeezed)
+fn source_on_sensor(index: usize, pi: (f32, f32), kernel_params: &KernelParams, params: &ComputeParams, shift_per_point: Option<&[(f32, f32, f32, f32, f32)]>, mesh: Option<&[f64]>) -> (f32, f32) {
+    let c = (kernel_params.c[0], kernel_params.c[1]);
+    let mut x = pi.0;
+    let mut y = pi.1;
+    if params.lens.input_horizontal_stretch > 0.001 { x *= params.lens.input_horizontal_stretch as f32; }
+    if params.lens.input_vertical_stretch   > 0.001 { y *= params.lens.input_vertical_stretch as f32; }
+
+    if let Some(digital) = &params.digital_lens {
+        if let Some(pt2) = digital.undistort_point((x, y), &kernel_params) {
+            x = pt2.0;
+            y = pt2.1;
+        }
+    }
+
+    if let Some(mesh_data) = mesh.filter(|m| m.len() > 9) {
+        // FocalPlaneDistortion
+        let o = mesh_data[0] as usize; // offset to focal plane distortion data
+        if o > 0 && mesh_data.get(o).map_or(false, |x| *x > 0.0) {
+
+            let mesh_size = (mesh_data[3], mesh_data[4]);
+            let origin    = (mesh_data[5] as f32, mesh_data[6] as f32);
+            let crop_size = (mesh_data[7] as f32, mesh_data[8] as f32);
+            let stblz_grid = if mesh_data[o + 2] > 0.0 { mesh_data[o + 2] } else { mesh_size.1 / 8.0 }; // band height comes with the table
+
+            x = map_coord(x, 0.0, params.width  as f32, origin.0, origin.0 + crop_size.0);
+            y = map_coord(y, 0.0, params.height as f32, origin.1, origin.1 + crop_size.1);
+
+            let idx = (y as f64 / stblz_grid).floor().max(0.0).min(7.0) as usize;
+            let delta = y as f64 - stblz_grid * idx as f64;
+            x += (mesh_data[o + 4 + idx * 2 + 0] * delta) as f32;
+            y += (mesh_data[o + 4 + idx * 2 + 1] * delta) as f32;
+            for j in 0..idx {
+                x += (mesh_data[o + 4 + j * 2 + 0] * stblz_grid) as f32;
+                y += (mesh_data[o + 4 + j * 2 + 1] * stblz_grid) as f32;
+            }
+
+            x = map_coord(x, origin.0, origin.0 + crop_size.0, 0.0, params.width  as f32);
+            y = map_coord(y, origin.1, origin.1 + crop_size.1, 0.0, params.height as f32);
+        }
+
+        if mesh_data[0] > 10.0 {
+            let mesh_size = (mesh_data[3], mesh_data[4]);
+            let origin    = (mesh_data[5] as f32, mesh_data[6] as f32);
+            let crop_size = (mesh_data[7] as f32, mesh_data[8] as f32);
+
+            x = map_coord(x, 0.0, params.width  as f32, origin.0, origin.0 + crop_size.0);
+            y = map_coord(y, 0.0, params.height as f32, origin.1, origin.1 + crop_size.1);
+
+            let new_pos = crate::gyro_source::interpolate_mesh(x as f64, y as f64, (mesh_size.0, mesh_size.1), &mesh_data);
+
+            x = map_coord(new_pos.x as f32, origin.0, origin.0 + crop_size.0, 0.0, params.width  as f32);
+            y = map_coord(new_pos.y as f32, origin.1, origin.1 + crop_size.1, 0.0, params.height as f32);
+        }
+    }
+    if let Some(shift) = shift_per_point.and_then(|v| v.get(index)) {
+        // Sensor roll around the principal point first, then the sensor/lens shift (the inverse of `rotate_and_distort`)
+        let ang_rad = shift.2;
+        let cos_a = ang_rad.cos();
+        let sin_a = ang_rad.sin();
+        let (xr, yr) = (x - c.0, y - c.1);
+        x = cos_a * xr - sin_a * yr - shift.3 + shift.0 + c.0;
+        y = sin_a * xr + cos_a * yr - shift.4 + shift.1 + c.1;
+    }
+    (x, y)
 }
 
 // Ported from OpenCV: https://github.com/opencv/opencv/blob/4.x/modules/calib3d/src/fisheye.cpp#L321

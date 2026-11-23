@@ -54,14 +54,14 @@ pub enum Start {
 }
 impl Start {
     /// Normalized image radius of a ray angle, `None` where this lens has no image of it
-    fn radius(&self, theta: f64) -> Option<f64> {
+    pub(crate) fn radius(&self, theta: f64) -> Option<f64> {
         match self {
             Self::Equidistant => (theta < PI).then_some(theta),
             Self::Pinhole => (theta < 89f64.to_radians()).then(|| theta.tan()),
         }
     }
     /// Normalized image point → unit ray
-    fn ray(&self, x: f64, y: f64) -> Option<Vector3<f64>> {
+    pub(crate) fn ray(&self, x: f64, y: f64) -> Option<Vector3<f64>> {
         match self {
             Self::Equidistant => {
                 let t = x.hypot(y);
