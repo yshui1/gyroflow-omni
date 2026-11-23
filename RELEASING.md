@@ -89,7 +89,7 @@ Publishing checks that both files are in the draft, asks you to confirm, then pu
 ## Version numbers
 
 - `OMNI_RELEASE=1` (set by the scripts) makes the app report plain `1.0.0`.
-- Other local builds report `1.0.0 (dev…)`. Both kinds of build check for updates and install plugins from GitHub releases.
+- Other local builds report `1.0.0` too, without a dev suffix, unless built by GitHub Actions (`1.0.0 (gh…)`). Both kinds of build check for updates and install plugins from GitHub releases.
 - `just publish <version>` (inherited from upstream) bumps the version files above in a fresh clone, but it also runs `cargo update` on every dependency, then commits, tags and pushes to `master`. Edit the versions by hand unless you want all of that.
 
 ## Troubleshooting
