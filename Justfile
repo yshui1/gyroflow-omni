@@ -44,13 +44,12 @@ ios *param:
 publish version:
     #!/bin/bash
     set -euo pipefail
-    git clone --depth 1 git@github.com:gyroflow/gyroflow.git __publish
+    git clone --depth 1 git@github.com:yshui1/gyroflow-omni.git __publish
     publish_dir="$PWD/__publish"
     trap 'rm -rf "$publish_dir"' EXIT
     pushd __publish
     sed -i'' -E "0,/ProjectVersion := \"[0-9\.a-z-]+\"/s//ProjectVersion := \"{{version}}\"/" _scripts/common.just
     sed -i'' -E "0,/version = \"[0-9\.a-z-]+\"/s//version = \"{{version}}\"/" Cargo.toml
-    sed -i'' -E "0,/version = \"[0-9\.a-z-]+\"/s//version = \"{{version}}\"/" src/core/Cargo.toml
     sed -i'' -E "/<key>CFBundleShortVersionString<.key>/ s/<string>[0-9\.a-z-]+<.string>/<string>{{version}}<\/string>/" _deployment/mac/Gyroflow.app/Contents/Info.plist
     sed -i'' -E "/<key>CFBundleVersion<.key>/ s/<string>[0-9\.a-z-]+<.string>/<string>{{version}}<\/string>/" _deployment/mac/Gyroflow.app/Contents/Info.plist
     sed -i'' -E "0,/Gyroflow v[0-9\.a-z-]+/s//Gyroflow v{{version}}/" src/cli.rs
@@ -58,7 +57,7 @@ publish version:
     sed -i'' -E "/<key>CFBundleShortVersionString<.key>/ s/<string>[0-9\.a-z-]+<.string>/<string>{{version}}<\/string>/" _deployment/ios/Info.plist
     sed -i'' -E "/<key>CFBundleVersion<.key>/ s/<string>[0-9\.a-z-]+<.string>/<string>{{version}}<\/string>/" _deployment/ios/Info.plist
     sed -i'' -E "0,/Identity Version=\"[0-9\.a-z-]+\"/s//Identity Version=\"{{version}}.0\"/" _deployment/windows/AppxManifest.xml
-    for f in _scripts/common.just Cargo.toml src/core/Cargo.toml src/cli.rs _deployment/android/AndroidManifest.xml _deployment/ios/Info.plist _deployment/mac/Gyroflow.app/Contents/Info.plist _deployment/windows/AppxManifest.xml; do
+    for f in _scripts/common.just Cargo.toml src/cli.rs _deployment/android/AndroidManifest.xml _deployment/ios/Info.plist _deployment/mac/Gyroflow.app/Contents/Info.plist _deployment/windows/AppxManifest.xml; do
         if git diff --quiet -- "$f"; then echo "Version was not updated in $f, aborting"; exit 1; fi
     done
     pushd src/core

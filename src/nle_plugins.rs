@@ -6,6 +6,9 @@ use std::io::{ self, Cursor };
 use std::process::Command;
 use std::path::Path;
 
+/// GitHub repository that publishes the Gyroflow (Omni) video editor plugins.
+const OMNI_PLUGINS_REPO: &str = "yshui1/gyroflow-plugins-omni";
+
 pub fn get_path(typ: &str) -> &'static str {
     if cfg!(target_os = "windows") {
         if typ == "openfx" {
@@ -150,32 +153,22 @@ fn copy_files(tempdir: &str, extract_path: &str, typ: &str) -> io::Result<()> {
 }
 
 pub fn install(typ: &str, plugins_base: String) -> io::Result<String> {
-    let mut nightly_base = "https://nightly.link/yshui1/gyroflow-plugins-omni/workflows/release/main/";
-    if !plugins_base.is_empty() {
-        nightly_base = &plugins_base;
-    }
-    let release_base = "https://github.com/yshui1/gyroflow-plugins-omni/releases/latest/download/";
-    let (download_url, extract_path) = match typ {
+    // Omni plugins are released by hand (no CI nightlies), so every app build installs the latest GitHub release.
+    // The "pluginsBase" setting can point at another folder of release assets, e.g. for testing a build before publishing it.
+    let default_base = format!("https://github.com/{OMNI_PLUGINS_REPO}/releases/latest/download/");
+    let base = if plugins_base.is_empty() { default_base.as_str() } else { plugins_base.as_str() };
+    let (file, extract_path) = match typ {
         "openfx" => {
-            if cfg!(target_os = "windows") {
-                if is_nightly() { (format!("{nightly_base}Gyroflow-OpenFX-windows.zip"), "C:/Program Files/Common Files/OFX/Plugins/") }
-                else            { (format!("{release_base}Gyroflow-OpenFX-windows.zip"), "C:/Program Files/Common Files/OFX/Plugins/") }
-            } else {
-                if is_nightly() { (format!("{nightly_base}Gyroflow-OpenFX-macos-zip.zip"), "/Library/OFX/Plugins/") }
-                else            { (format!("{release_base}Gyroflow-OpenFX-macos.zip"),     "/Library/OFX/Plugins/") }
-            }
+            if cfg!(target_os = "windows") { ("Gyroflow-OpenFX-windows.zip", "C:/Program Files/Common Files/OFX/Plugins/") }
+            else                           { ("Gyroflow-OpenFX-macos.zip",   "/Library/OFX/Plugins/") }
         }
         "adobe" => {
-            if cfg!(target_os = "windows") {
-                if is_nightly() { (format!("{nightly_base}Gyroflow-Adobe-windows.zip"), "C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/") }
-                else            { (format!("{release_base}Gyroflow-Adobe-windows.aex"), "C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/") }
-            } else {
-                if is_nightly() { (format!("{nightly_base}Gyroflow-Adobe-macos-zip.zip"), "/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore/") }
-                else            { (format!("{release_base}Gyroflow-Adobe-macos.zip"),     "/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore/") }
-            }
+            if cfg!(target_os = "windows") { ("Gyroflow-Adobe-windows.aex", "C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/") }
+            else                           { ("Gyroflow-Adobe-macos.zip",   "/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore/") }
         }
         _ => unreachable!()
     };
+    let download_url = format!("{base}{file}");
 
     let mut reader = ureq::get(&download_url).call()
         .map_err(|e| io::Error::other(format!("Unable to download Omni plugin: {e}")))?
@@ -214,10 +207,6 @@ pub fn install(typ: &str, plugins_base: String) -> io::Result<String> {
     detect(typ)
 }
 
-fn is_nightly() -> bool {
-    crate::util::get_version().contains("(gh") || crate::util::get_version().contains("(dev")
-}
-
 pub fn is_nle_installed(typ: &str) -> bool {
     use chrono::{ Datelike, Utc };
 
@@ -252,26 +241,11 @@ pub fn is_nle_installed(typ: &str) -> bool {
 }
 
 pub fn latest_version() -> Option<String> {
-    if is_nightly() {
-        let body = ureq::get("https://api.github.com/repos/yshui1/gyroflow-plugins-omni/actions/workflows/release.yml/runs?branch=main&status=success").call().ok()?.into_body().read_to_string().ok()?;
-        let v: serde_json::Value = serde_json::from_str(&body).ok()?;
-        for obj in v.get("workflow_runs")?.as_array()? {
-            let obj = obj.as_object()?;
-            if obj.get("conclusion").and_then(|x| x.as_str()) == Some("success") {
-                return Some(format!("{}", obj.get("run_number")?.as_u64()?));
-            }
-        }
-    } else {
-        let body = ureq::get("https://api.github.com/repos/yshui1/gyroflow-plugins-omni/releases").call().ok()?.into_body().read_to_string().ok()?;
-        let v: Vec<serde_json::Value> = serde_json::from_str(&body).ok()?;
-        for obj in v {
-            let obj = obj.as_object()?;
-            if obj.get("draft").and_then(|x| x.as_bool()) == Some(false) && obj.get("prerelease").and_then(|x| x.as_bool()) == Some(false) {
-                return Some(obj.get("tag_name")?.as_str()?.trim_start_matches('v').to_owned());
-            }
-        }
-    }
-    None
+    // GitHub's "latest" release skips drafts and prereleases, so a release still waiting for its macOS assets isn't offered.
+    let url = format!("https://api.github.com/repos/{OMNI_PLUGINS_REPO}/releases/latest");
+    let body = ureq::get(&url).call().ok()?.into_body().read_to_string().ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    Some(v.get("tag_name")?.as_str()?.trim_start_matches('v').to_owned())
 }
 
 pub fn detect(typ: &str) -> io::Result<String> {

@@ -1,8 +1,7 @@
 name: Release
 
+# Omni releases are built locally with _scripts/omni-release.ps1 / omni-release.sh, so this upstream workflow only runs when started by hand.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -268,7 +267,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          prerelease: true
+          prerelease: false
           files: |
             ./Gyroflow-windows/Gyroflow-windows64.zip
             ./Gyroflow-windows-arm/Gyroflow-windows-arm64.zip

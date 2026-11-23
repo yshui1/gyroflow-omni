@@ -1987,32 +1987,27 @@ impl Controller {
             this.updates_available(QString::from(version), QString::from(changelog))
         });
         core::run_threaded(move || {
-            if let Ok(Ok(body)) = ureq::get("https://api.github.com/repos/gyroflow/gyroflow/releases").call().map(|x| x.into_body().read_to_string()) {
-                if let Ok(v) = serde_json::from_str(&body) as serde_json::Result<serde_json::Value> {
-                    if let Some(v) = v.as_array() {
-                        for itm in v {
-                            if let Some(obj) = itm.as_object() {
-                                let name = obj.get("name").and_then(|x| x.as_str());
-                                let body = obj.get("body").and_then(|x| x.as_str());
-                                let is_prerelease = obj.get("prerelease").and_then(|x| x.as_bool()).unwrap_or_default();
-                                if is_prerelease { continue; }
+            // Omni has its own version line (starting at 1.0.0), so only Omni releases are checked, never upstream Gyroflow's.
+            let url = format!("https://api.github.com/repos/{}/releases", util::OMNI_APP_REPO);
+            let Ok(Ok(body)) = ureq::get(&url).call().map(|x| x.into_body().read_to_string()) else { return; };
+            let Ok(releases) = serde_json::from_str::<Vec<serde_json::Value>>(&body) else { return; };
+            let Ok(this_version) = semver::Version::parse(env!("CARGO_PKG_VERSION")) else { return; };
 
-                                if let Some(name) = name {
-                                    ::log::info!("Latest version: {}, current version: {}", name, util::get_version());
+            let latest = releases.iter()
+                .filter(|r| !r.get("draft").and_then(|x| x.as_bool()).unwrap_or_default())
+                .filter(|r| !r.get("prerelease").and_then(|x| x.as_bool()).unwrap_or_default())
+                .filter_map(|r| {
+                    let tag = r.get("tag_name")?.as_str()?;
+                    let version = semver::Version::parse(tag.trim_start_matches('v')).ok()?;
+                    Some((version, r))
+                })
+                .max_by(|a, b| a.0.cmp(&b.0));
 
-                                    if let Ok(latest_version) = semver::Version::parse(name.trim_start_matches('v')) {
-                                        if let Ok(this_version) = semver::Version::parse(env!("CARGO_PKG_VERSION")) {
-                                            if latest_version > this_version {
-                                                update((name.to_owned(), body.unwrap_or_default().to_owned()));
-                                            }
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+            let Some((latest_version, release)) = latest else { return; };
+            ::log::info!("Latest Omni version: {}, current version: {}", latest_version, util::get_version());
+            if latest_version > this_version {
+                let changelog = release.get("body").and_then(|x| x.as_str()).unwrap_or_default();
+                update((format!("v{latest_version}"), changelog.to_owned()));
             }
         });
     }

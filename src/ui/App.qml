@@ -317,7 +317,7 @@ Rectangle {
                                 return;
                             }
                             if (fname.endsWith('.braw') || fname.endsWith('.crm') || fname.endsWith('.dng')) {
-                                messageBox(Modal.Info, qsTr("This format is not available for rendering.\nThe recommended workflow is to export project file and use one of [video editor plugins] (%1).").replace(/\[(.*?)\]/, '<a href="https://gyroflow.xyz/download#plugins"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Adobe Premiere/Ae, Final Cut Pro"), [
+                                messageBox(Modal.Info, qsTr("This format is not available for rendering.\nThe recommended workflow is to export project file and use one of [video editor plugins] (%1).").replace(/\[(.*?)\]/, '<a href="https://github.com/yshui1/gyroflow-plugins-omni/releases/latest"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Adobe Premiere/Ae, Final Cut Pro"), [
                                     { text: qsTr("Ok"), accent: true }
                                 ]);
                                 return;
@@ -373,7 +373,7 @@ Rectangle {
                             }
 
                             if ((fname.endsWith('.r3d') || fname.endsWith('.nev')) && controller.find_redline()) {
-                                messageBox(Modal.Info, "Gyroflow will use REDline to convert NRAW (.NEV), R3D NE, or RED R3D to ProRes before stabilizing in order to export from Gyroflow directly.\nIf you want to work on RAW data instead, export project file (Ctrl+S) and use one of [video editor plugins] (%1).".replace(/\[(.*?)\]/, '<a href="https://gyroflow.xyz/download#plugins"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Final Cut Pro"), [
+                                messageBox(Modal.Info, "Gyroflow will use REDline to convert NRAW (.NEV), R3D NE, or RED R3D to ProRes before stabilizing in order to export from Gyroflow directly.\nIf you want to work on RAW data instead, export project file (Ctrl+S) and use one of [video editor plugins] (%1).".replace(/\[(.*?)\]/, '<a href="https://github.com/yshui1/gyroflow-plugins-omni/releases/latest"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Final Cut Pro"), [
                                     { text: qsTr("Ok"), accent: true }
                                 ], undefined, Text.StyledText, "r3d-conversion" );
                             }
@@ -673,18 +673,8 @@ Rectangle {
             Qt.callLater(controller.recompute_threaded);
         }
         function openUpdatePage(): void {
-            if (Qt.platform.os == "android") {
-                Qt.openUrlExternally("https://play.google.com/store/apps/details?id=xyz.gyroflow");
-            } else if (Qt.platform.os == "ios") {
-                Qt.openUrlExternally("https://apps.apple.com/us/app/gyroflow/id6447994244");
-            } else if (Qt.platform.os == "osx" && isStorePackage) {
-                Qt.openUrlExternally("https://apps.apple.com/us/app/gyroflow/id6447994244");
-            } else if (Qt.platform.os == "windows" && isStorePackage) {
-                // https://apps.microsoft.com/store/detail/gyroflow/9NZG7T0JCG9H
-                Qt.openUrlExternally("ms-windows-store://pdp/?ProductId=9NZG7T0JCG9H");
-            } else {
-                Qt.openUrlExternally("https://github.com/gyroflow/gyroflow/releases");
-            }
+            // Omni is only distributed through its own GitHub releases, not the upstream stores.
+            Qt.openUrlExternally("https://github.com/yshui1/gyroflow-omni/releases/latest");
         }
         function onUpdates_available(version: string, changelog: string): void {
             const heading = "<p align=\"center\">" + qsTr("There's a newer version available: %1.").arg("<b>" + version + "</b>") + "</p>\n\n";
@@ -762,7 +752,7 @@ Rectangle {
 
     Component.onCompleted: {
         controller.check_updates();
-        controller.check_server_message();
+        // Upstream's api.gyroflow.xyz announcements (including release promos) are for official Gyroflow, so Omni doesn't show them.
 
         QT_TRANSLATE_NOOP("App", "An error occurred: %1");
         QT_TRANSLATE_NOOP("App", "Gyroflow file exported to %1.");

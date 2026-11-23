@@ -346,6 +346,10 @@ deploy *param:
             codesign -vvvv --strict --options runtime --timestamp --force -s $SIGNING_FINGERPRINT $PROJECT_DIR/_deployment/_binaries/mac/Gyroflow.app
 
             codesign -vvvv --deep --verify $PROJECT_DIR/_deployment/_binaries/mac/Gyroflow.app
+        else
+            # No Developer ID (Omni local releases): ad-hoc sign so the bundle has a valid signature, which Apple Silicon requires to run it.
+            codesign -vvvv --deep --force -s - $PROJECT_DIR/_deployment/_binaries/mac/Gyroflow.app
+            codesign -vvvv --deep --verify $PROJECT_DIR/_deployment/_binaries/mac/Gyroflow.app
         fi
 
         if [ -z "$DONT_BUILD_DMG" ]; then

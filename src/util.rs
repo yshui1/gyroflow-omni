@@ -443,9 +443,13 @@ pub fn qt_graphics_api() -> QString {
     })
 }
 
+/// GitHub repository that publishes Gyroflow (Omni) app releases and update notifications.
+pub const OMNI_APP_REPO: &str = "yshui1/gyroflow-omni";
+
 pub fn get_version() -> String {
     let ver = env!("CARGO_PKG_VERSION");
-    if option_env!("GITHUB_REF").map_or(false, |x| x.contains("tags")) {
+    // OMNI_RELEASE=1 marks a local release build (Omni has no CI), the same as a tagged CI build.
+    if option_env!("GITHUB_REF").map_or(false, |x| x.contains("tags")) || option_env!("OMNI_RELEASE").map_or(false, |x| x == "1") {
         ver.to_string() // Official, tagged version
     } else if let Some(gh_run) = option_env!("GITHUB_RUN_NUMBER") {
         format!("{} (gh{})", ver, gh_run)
