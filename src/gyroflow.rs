@@ -74,7 +74,7 @@ fn entry() {
         qApp->setOrganizationName("Gyroflow");
         qApp->setOrganizationDomain("gyroflow.xyz");
         qApp->setApplicationName("Gyroflow");
-        qApp->setApplicationDisplayName("Gryoflow (Omni)");
+        qApp->setApplicationDisplayName("Gyroflow (Omni)");
 
         QMessageLogger("", 0, "main").debug(QLoggingCategory("gyroflow")) << "Qt version:" << qVersion();
     });

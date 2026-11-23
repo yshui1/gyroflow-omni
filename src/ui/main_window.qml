@@ -25,7 +25,7 @@ Window {
         onTriggered: main_window.safeAreaMargins = ui_tools.get_safe_area_margins(main_window);
     }
 
-    title: "Gryoflow (Omni) v" + version.replace(/ \(dev\d+\)$/, "");
+    title: "Gyroflow (Omni) v" + version.replace(/ \(dev\d+\)$/, "");
 
     onVisibilityChanged: {
         Qt.callLater(() => {

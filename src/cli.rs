@@ -175,7 +175,7 @@ pub fn run(open_file: &mut String, open_preset: &mut String, open_files: &mut Ve
         let opts: Opts = argh::from_env();
 
         if opts.version {
-            println!("Gryoflow (Omni) v{}", crate::util::get_version());
+            println!("Gyroflow (Omni) v{}", crate::util::get_version());
             return true;
         }
 

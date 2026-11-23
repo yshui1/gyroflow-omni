@@ -42,7 +42,7 @@ The synthetic fixture tests container timing with NRAW/NR3D sample-entry tags an
 
 ## Windows build
 
-The app display name is **Gryoflow (Omni)**. The executable metadata, GUI title, CLI version text, and Windows/macOS package display labels use this name. Internal application identifiers and the settings path stay compatible with the existing checkout.
+The app display name is **Gyroflow (Omni)**. The executable metadata, GUI title, CLI version text, and Windows/macOS package display labels use this name. Internal application identifiers and the settings path stay compatible with the existing checkout.
 
 A Windows debug build succeeded with Qt 6.7.3, FFmpeg 9.0, OpenCV 4.14.0, OpenCL, MDK 0.39.0, and RED SDK 9.2.1. Build dependencies are under the ignored `ext/` directory. The build has OpenCV support enabled and optional AI optical flow disabled.
 
@@ -54,12 +54,12 @@ To rebuild with the provisioned dependencies:
 
 Add `-Release` for an optimized build. Omitting `-NoAiOpticalFlow` enables the default AI feature and requires a separate full-feature build verification.
 
-The local runnable debug folder is `target/Gryoflow-Omni/`, with `Gryoflow (Omni).exe`, matching debug Qt plugins/runtime, FFmpeg/OpenCV/MDK/RED DLLs, and lens profiles. This is a local test build, not a release installer. Keep the folder together.
+The local runnable debug folder is `target/Gyroflow-Omni/`, with `Gyroflow (Omni).exe`, matching debug Qt plugins/runtime, FFmpeg/OpenCV/MDK/RED DLLs, and lens profiles. This is a local test build, not a release installer. Keep the folder together.
 
 Verified:
 
 - Full desktop compilation and linking completed. This caught and fixed the QUrl-to-encoded-string conversion in Nikon batch detection.
-- The packaged executable's `--version` command exited successfully and reported `Gryoflow (Omni) v1.6.3`.
+- The packaged executable's `--version` command exited successfully and reported `Gyroflow (Omni) v1.6.3`.
 - Windows executable ProductName and FileDescription show the new name.
 - A hidden GUI startup with `DSC_0003.R3D` remained running and reached the Nikon decoder setup. The test process was then closed; this is not visual playback verification.
 - A native MDK/RED SDK first-frame test decoded each of the three original samples on CPU, producing a reduced-resolution 378x212 frame. The test harness and binaries are under ignored `target/`.
@@ -78,7 +78,7 @@ The Nikon ZR manual-lens sample records 0.0 mm as an unknown focal length. Accep
 
 The metadata reader now ignores non-positive/non-finite focal lengths, and the projection path also validates saved/imported focal values before replacing the fallback matrix. The regression failed with zero focal entries before the fix and passes afterward. The rebuilt GUI showed DSC_0073.R3D with stabilization enabled at about 100% zoom.
 
-The verified runnable candidate is target/Gryoflow-Omni-Fixed/Gryoflow (Omni).exe. It uses the current MDK 0.39.0 nightly runtime. A separate QR overlay remains: the bundled upstream MDK license key reports that it does not cover the renamed app. This is distinct from the corrected projection failure.
+The verified runnable candidate is target/Gyroflow-Omni-Fixed/Gyroflow (Omni).exe. It uses the current MDK 0.39.0 nightly runtime. A separate QR overlay remains: the bundled upstream MDK license key reports that it does not cover the renamed app. This is distinct from the corrected projection failure.
 
 ## Omni MDK setup and playback measurements
 
@@ -93,14 +93,21 @@ The NEV and renamed R3D samples have the same SHA-256. Using MDK 0.39.0 nightly 
 
 These are native decoding throughput measurements, not end-to-end preview frame rates. There was no reproduced extension-specific decoder penalty. The user confirmed smooth playback with the updated keyless candidate. Earlier reports that the QR overlay remained refer to builds still passing the incompatible upstream key.
 
-An optimized Windows build with OpenCV and without optional AI optical flow also succeeded. Its runnable folder is target/Gryoflow-Omni-Release; its version-command smoke test exited successfully. It has not been visually tested because the user stopped Computer Use with Escape after confirming smooth playback in the keyless candidate.
+An optimized Windows build with OpenCV and without optional AI optical flow also succeeded. Its runnable folder is target/Gyroflow-Omni-Release; its version-command smoke test exited successfully. It has not been visually tested because the user stopped Computer Use with Escape after confirming smooth playback in the keyless candidate.
 
 ## Issued Omni application key
 
-The MDK maintainer supplied an app-specific key for Gryoflow (Omni) on October 31, 2026. The local Windows build stores it in ignored `ext/mdk-license-key.txt`. `_scripts/build_windows_omni.ps1` loads that file into the build environment, and the app embeds it through `option_env!("GYROFLOW_OMNI_MDK_KEY")`.
+The MDK maintainer supplied an app-specific key on October 31, 2026, issued for the misspelled name "Gryoflow (Omni)". After the name was corrected, the maintainer reissued keys on November 23, 2026. MDK keys are platform-bound, so Windows and macOS each have their own key:
+
+- Windows: bound to the app name `Gyroflow (Omni)` (executable `Gyroflow (Omni).exe`, ProductName `Gyroflow (Omni)`). Stored in ignored `ext/mdk-license-key.txt`. `_scripts/build_windows_omni.ps1` loads it into the build environment.
+- macOS: bound to the executable name or bundle identifier. Stored in ignored `ext/mdk-license-key-macos.txt`. `_scripts/macos.just` exports it as `GYROFLOW_OMNI_MDK_KEY` for every recipe. Recipes need just 1.39 or newer for `read()`.
+
+The app embeds the key through `option_env!("GYROFLOW_OMNI_MDK_KEY")`.
 
 The optimized app can therefore be launched normally without a key environment variable. A non-empty runtime `GYROFLOW_OMNI_MDK_KEY` still overrides the embedded key. Public clones without local key configuration retain keyless mode. The key itself is absent from tracked source files.
 
 The maintainer's reply did not explicitly state expiration or SDK-pinning terms. Do not infer additional terms from the successful key integration.
 
-Verification: the rebuilt optimized executable contains the issued key and launched with the runtime key environment variable removed. The application reached MDK license configuration and Nikon R3D decoding without an invalid-key, app-name-mismatch, or outdated-SDK message. The actual GUI displayed DSC_0073.R3D with stabilization enabled and no MDK QR overlay. The licensed runnable build is target/Gryoflow-Omni-Release/Gryoflow (Omni).exe.
+Verification: the rebuilt optimized executable contains the issued key and launched with the runtime key environment variable removed. The application reached MDK license configuration and Nikon R3D decoding without an invalid-key, app-name-mismatch, or outdated-SDK message. The actual GUI displayed DSC_0073.R3D with stabilization enabled and no MDK QR overlay. The licensed runnable build is target/Gyroflow-Omni-Release/Gyroflow (Omni).exe.
+
+Verification of the reissued Windows key (November 23, 2026, MDK 0.40.1): the optimized build was launched as `target/Gyroflow-Omni/Gyroflow (Omni).exe` with the runtime key variable removed. MDK logged "verify key signature ok", restrictions "GPL", app "Gyroflow (Omni)", and key time -1, then opened a Sony X-OCN clip through the XOCN decoder. MDK's own log is the quickest license check: run the app and search `%LOCALAPPDATA%\Gyroflow\gyroflow.log` for `license key for app`. The macOS key has not been tested; it needs a macOS build.

@@ -3,12 +3,14 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $taskQtBin = Join-Path $taskRoot 'ext/6.7.3/msvc2019_64/bin'
 $taskOpenCv = Join-Path $taskRoot 'ext/vcpkg/installed/x64-windows'
-$taskFfmpeg = Join-Path $taskRoot 'ext/ffmpeg-9.0-windows-desktop-vs2026-gpl-lite'
+$taskFfmpeg = if (Test-Path -LiteralPath (Join-Path $taskRoot "ext/ffmpeg-9.1-windows-desktop-vs2026-gpl-lite/lib/x64/avcodec.lib")) { Join-Path $taskRoot "ext/ffmpeg-9.1-windows-desktop-vs2026-gpl-lite" } else { Join-Path $taskRoot "ext/ffmpeg-9.0-windows-desktop-vs2026-gpl-lite" }
 $taskMdk = if (Test-Path -LiteralPath "$taskRoot/ext/mdk-nightly/mdk-sdk/lib/x64/mdk.lib") { "$taskRoot/ext/mdk-nightly/mdk-sdk" } else { "$taskRoot/ext/mdk-sdk" }
 $taskLlvm = if ($env:LIBCLANG_PATH) { $env:LIBCLANG_PATH } else { 'C:/Program Files/LLVM/bin' }
-foreach ($taskRequired in @("$taskQtBin/qmake.exe", "$taskOpenCv/lib/opencv_core4.lib", "$taskFfmpeg/lib/avcodec.lib", "$taskLlvm/clang.exe", "$taskMdk/lib/x64/mdk.lib")) {
+foreach ($taskRequired in @("$taskQtBin/qmake.exe", "$taskOpenCv/lib/opencv_core4.lib", "$taskLlvm/clang.exe", "$taskMdk/lib/x64/mdk.lib")) {
     if (-not (Test-Path -LiteralPath $taskRequired)) { throw "Missing build dependency: $taskRequired" }
 }
+# FFmpeg 9.1 archives keep libraries in lib/x64; the older local 9.0 copy was flattened.
+if (-not ((Test-Path -LiteralPath "$taskFfmpeg/lib/avcodec.lib") -or (Test-Path -LiteralPath "$taskFfmpeg/lib/x64/avcodec.lib"))) { throw "Missing build dependency: $taskFfmpeg/lib/x64/avcodec.lib" }
 $env:QMAKE = "$taskQtBin/qmake.exe"
 $env:FFMPEG_DIR = $taskFfmpeg
 $env:FFMPEG_ARCH = 'x64'

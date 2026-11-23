@@ -38,7 +38,7 @@
 </p>
 
 ## About the project
-The desktop app in this fork is named **Gryoflow (Omni)**. See [Windows build notes](docs/nikon-raw.md#windows-build) for the local build and validation.
+The desktop app in this fork is named **Gyroflow (Omni)**. See [Windows build notes](docs/nikon-raw.md#windows-build) for the local build and validation.
 
 Use **Lens profile → Create zoom profile** to combine calibrations from the same zoom lens and recording mode. Confirm the recorded focal length for each input, then save one JSON for the calibrated range. The save dialog opens the local profile folder (`%LOCALAPPDATA%\Gyroflow\lens_profiles` on Windows). Profiles saved there are automatically matched to clips with matching camera, lens, recording mode, and focal-length metadata.
 

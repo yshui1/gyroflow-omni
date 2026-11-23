@@ -12,6 +12,11 @@ DistributionProvisioning      := ProjectDir / "_deployment/mac/Gyroflow_mac_app_
 
 AppBundle := ProjectDir / "_deployment/_binaries/mac/Gyroflow.app"
 
+# MDK keys are platform-bound, so macOS builds embed the key issued for the macOS bundle.
+# Keep it in ignored ext/mdk-license-key-macos.txt; an explicit environment variable wins.
+MdkKeyFile := ExtDir / "mdk-license-key-macos.txt"
+export GYROFLOW_OMNI_MDK_KEY := env_var_or_default("GYROFLOW_OMNI_MDK_KEY", if path_exists(MdkKeyFile) == "true" { trim(read(MdkKeyFile)) } else { "" })
+
 export CPATH := if os() == "macos" {
     if path_exists(`xcode-select --print-path` + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include") == "true" {
         `xcode-select --print-path` + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include"
