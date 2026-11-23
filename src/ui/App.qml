@@ -109,6 +109,20 @@ Rectangle {
         fileMode: FileDialog.OpenFiles;
         onAccepted: videoArea.loadMultipleFiles(selectedFiles, false);
     }
+    // A CinemaDNG take: the folder of its frames, which a file dialog can't select
+    FolderDialog {
+        id: dngFolderDialog;
+        title: qsTr("Choose a CinemaDNG folder");
+        onAccepted: {
+            settings.setValue("folder-video", selectedFolder.toString());
+            videoArea.loadFile(selectedFolder, false);
+        }
+        function open2(): void {
+            const savedFolder = settings.value("folder-video", "");
+            if (savedFolder) currentFolder = savedFolder;
+            open();
+        }
+    }
 
     property string pendingLoadPreset: loadPresetOnStart;
     property url pendingOpenFileOrg: openFileOnStart;
@@ -185,6 +199,7 @@ Rectangle {
             ItemLoader { id: vidInfo; sourceComponent: Component {
                 Menu.VideoInformation {
                     onSelectFileRequest: fileDialog.open2();
+                    onSelectFolderRequest: dngFolderDialog.open2();
                 }
             } }
             Hr { id: vidInfoHr; }

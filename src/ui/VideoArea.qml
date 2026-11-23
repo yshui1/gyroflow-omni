@@ -336,6 +336,14 @@ Item {
         if (filename.endsWith(".gyroflow")) {
             return loadGyroflowData(url, queueJobId);
         }
+        // A folder of CinemaDNG frames opens as their sequence, from its first frame
+        const dngFrame = filename ? "" : filesystem.dng_sequence_in_folder(url).toString();
+        if (dngFrame) {
+            url = dngFrame;
+            filename = filesystem.get_filename(url);
+            folder = filesystem.get_folder(url);
+            skip_detection = false;
+        }
         if (filename.endsWith(".RDC")) {
             // Assumes regular filesystem
             let parts = url.toString().split("/");
@@ -926,7 +934,7 @@ Item {
             onEntered: (drag) => {
                 if (!drag.urls.length) return;
                 const ext = drag.urls[0].toString().split(".").pop().toLowerCase();
-                drag.accepted = fileDialog.extensions.indexOf(ext) > -1 || ext == "rdc";
+                drag.accepted = fileDialog.extensions.indexOf(ext) > -1 || ext == "rdc" || (!isCalibrator && filesystem.dng_sequence_in_folder(drag.urls[0]).toString() != "");
             }
             onDropped: (drop) => {
                 if (isCalibrator) {

@@ -878,6 +878,8 @@ impl Controller {
         let stab = self.stabilizer.clone();
         let filename = filesystem::get_filename(&url);
         let is_xocn = self.source_video_size.is_some();
+        // The frame number an image sequence (`A001_%06d.dng`) starts with
+        let image_sequence_start = self.image_sequence_start.max(0) as usize;
         let mut load_options = gyroflow_core::gyro_source::FileLoadOptions::default();
         load_options.project_version = project_version as _;
 
@@ -957,7 +959,14 @@ impl Controller {
                     let mut additional_data = serde_json::Value::Object(serde_json::Map::new());
                     let additional_obj = additional_data.as_object_mut().unwrap();
 
-                    {
+                    // A CinemaDNG take whose frames carry telemetry (SIGMA fp with fpSup's Gyro2), which the core can't parse
+                    let cdng_loaded = is_main_video && crate::cdng::first_frame_of(&url, image_sequence_start).is_some_and(|first_frame| {
+                        match crate::cdng::load_sequence_telemetry(&stab, &first_frame, &url, &load_options, &progress, cancel_flag.clone()) {
+                            Ok(_) => { stab.recompute_undistortion(); true },
+                            Err(e) => { ::log::info!("No CinemaDNG telemetry in {}: {e}", first_frame.display()); false }
+                        }
+                    });
+                    if !cdng_loaded {
                         if let Ok(mut file) = filesystem::open_file(&url, false, false) {
                             let filesize = file.size;
                             if is_main_video {
@@ -3520,6 +3529,7 @@ pub struct Filesystem {
     restore_allowed_folders:  qt_method!(fn(&self)),
     get_next_file_url:        qt_method!(fn(&self, current_url: QUrl, index: i32) -> QUrl),
     is_same_file:             qt_method!(fn(&self, url: QUrl, other: QUrl) -> bool),
+    dng_sequence_in_folder:   qt_method!(fn(&self, url: QUrl) -> QUrl),
     url_opened:               qt_signal!(url: QUrl),
 }
 impl Filesystem {
@@ -3540,6 +3550,17 @@ impl Filesystem {
     fn remove_file(&self, url: QUrl) { let _ = filesystem::remove_file(&util::qurl_to_encoded(url)); }
     /// Whether both URLs reach the same file (`filesystem::is_same_file`), `false` when that can't be told
     fn is_same_file(&self, url: QUrl, other: QUrl) -> bool { filesystem::is_same_file(&util::qurl_to_encoded(url), &util::qurl_to_encoded(other)).unwrap_or_default() }
+    /// The first frame of the CinemaDNG take in the folder at `url` (`cdng::first_frame_in_folder`), to open the folder as
+    /// that frame's sequence. Empty for a file, or a folder with no numbered DNG frames
+    fn dng_sequence_in_folder(&self, url: QUrl) -> QUrl {
+        let url = util::qurl_to_encoded(url);
+        if url.is_empty() || url.starts_with("content://") { return QUrl::default(); }
+        let path = filesystem::url_to_path(&url);
+        match crate::cdng::first_frame_in_folder(std::path::Path::new(&path)) {
+            Some(frame) => QUrl::from(QString::from(filesystem::path_to_url(&frame.to_string_lossy()))),
+            None => QUrl::default(),
+        }
+    }
     fn folder_access_granted(&self, url: QUrl) { filesystem::folder_access_granted(&util::qurl_to_encoded(url)); }
     fn save_allowed_folders(&self) {
         let list = filesystem::get_allowed_folders();

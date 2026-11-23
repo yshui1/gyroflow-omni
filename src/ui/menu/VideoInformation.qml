@@ -68,6 +68,7 @@ MenuItem {
     }
 
     signal selectFileRequest();
+    signal selectFolderRequest();
 
     function loadFromVideoMetadata(md: var, org_w: int, org_h: int): void {
         const framerate = +md["stream.video[0].codec.frame_rate"] || 0;
@@ -159,6 +160,11 @@ MenuItem {
         iconName: "video"
         anchors.horizontalCenter: parent.horizontalCenter;
         onClicked: root.selectFileRequest();
+    }
+    LinkButton {
+        text: qsTr("Open CinemaDNG folder");
+        anchors.horizontalCenter: parent.horizontalCenter;
+        onClicked: root.selectFolderRequest();
     }
 
     InfoMessageSmall {
