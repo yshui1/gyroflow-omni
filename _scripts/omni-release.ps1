@@ -104,9 +104,13 @@ $files = foreach ($name in $WindowsAssets) {
 }
 $exe = Join-Path $Binaries 'win64/gyroflow.exe'
 if (Test-Path -LiteralPath $exe) {
-    $reported = (& $exe --version | Out-String).Trim()
-    if ($reported -and $reported -ne "Gyroflow (Omni) v$Version") { throw "gyroflow.exe reports '$reported', expected 'Gyroflow (Omni) v$Version'. Rebuild without -SkipBuild." }
+    # The app also logs Qt/MDK details, so look for the version line among them.
+    $ErrorActionPreference = 'Continue'   # its log goes to stderr, which 'Stop' would throw on
+    $lines = @(& $exe --version 2>$null | ForEach-Object { "$_".Trim() })
+    $ErrorActionPreference = 'Stop'
+    $reported = @($lines | Where-Object { $_ -like 'Gyroflow (Omni) v*' }) | Select-Object -First 1
     if (-not $reported) { Write-Warning "gyroflow.exe printed no version; check Help > About shows $Version." }
+    elseif ($reported -ne "Gyroflow (Omni) v$Version") { throw "gyroflow.exe reports '$reported', expected 'Gyroflow (Omni) v$Version'. Rebuild without -SkipBuild." }
 }
 foreach ($f in $files) {
     $hash = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash

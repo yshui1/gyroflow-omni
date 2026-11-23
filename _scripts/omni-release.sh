@@ -122,7 +122,8 @@ for name in "${MAC_ASSETS[@]}"; do
 done
 exe="$BINARIES/mac/Gyroflow.app/Contents/MacOS/gyroflow"
 if [[ -x "$exe" ]]; then
-    reported="$("$exe" --version 2>/dev/null || true)"
+    # The app also logs Qt/MDK details, so look for the version line among them.
+    reported="$("$exe" --version 2>/dev/null | grep -m1 '^Gyroflow (Omni) v' || true)"
     [[ "$reported" == "Gyroflow (Omni) v$VERSION" ]] || die "The app reports '$reported', expected 'Gyroflow (Omni) v$VERSION'. Rebuild without --skip-build."
 fi
 for f in "${FILES[@]}"; do
