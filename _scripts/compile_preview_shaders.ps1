@@ -4,7 +4,7 @@ $taskRoot = Split-Path -Parent $PSScriptRoot
 New-Item -ItemType Directory -Path "$taskRoot/target" -Force | Out-Null
 $taskOutput = Join-Path $taskRoot 'src/qt_gpu/compiled'
 $taskTemplate = [IO.File]::ReadAllText("$taskRoot/src/qt_gpu/undistort.frag")
-$taskModels = @('opencv_fisheye', 'opencv_standard', 'poly3', 'poly5', 'ptlens', 'insta360', 'sony', 'generic_polynomial', 'gopro')
+$taskModels = @('opencv_fisheye', 'opencv_standard', 'poly3', 'poly5', 'ptlens', 'insta360', 'insta360_v6', 'sony', 'generic_polynomial', 'gopro')
 $taskDigital = @('', 'gopro_superview', 'gopro6_superview', 'gopro_hyperview', 'gopro_warp', 'digital_stretch')
 $taskTemp = Join-Path $taskRoot 'target/preview-shader.frag'
 foreach ($taskModel in $taskModels) {

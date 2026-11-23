@@ -101,7 +101,7 @@ Rectangle {
 
     FileDialog {
         id: fileDialog;
-        property var extensions: [ "mp4", "mov", "mxf", "mkv", "webm", "insv", "gyroflow", "png", "jpg", "exr", "dng", "braw", "r3d", "nev" ];
+        property var extensions: [ "mp4", "mov", "mxf", "mkv", "webm", "insv", "gyroflow", "png", "jpg", "exr", "dng", "braw", "r3d", "nev", "crm" ];
 
         title: qsTr("Choose a video file")
         nameFilters: Qt.platform.os == "android"? undefined : [qsTr("Video files") + " (*." + extensions.concat(extensions.map(x => x.toUpperCase())).join(" *.") + ")"];
@@ -114,12 +114,15 @@ Rectangle {
     property url pendingOpenFileOrg: openFileOnStart;
     property url pendingOpenFile: pendingOpenFileOrg;
     onPendingOpenFileOrgChanged: { pendingOpenFile = pendingOpenFileOrg; onItemLoaded(); }
+    // The files Gyroflow was started with, when "Default CLI behavior" in the Advanced settings isn't to render them.
+    // Copied to a JavaScript array: the list itself becomes an empty one where a list<url> is expected
+    property var pendingOpenFiles: [...openFilesOnStart];
     Connections {
         target: filesystem;
         function onUrl_opened(url: url): void { pendingOpenFileOrg = ""; pendingOpenFileOrg = url; }
     }
     function onItemLoaded(): void {
-        if (window.vidInfo && window.stab && window.exportSettings && window.sync && window.motionData && pendingOpenFile.toString()) {
+        if (window.vidInfo && window.stab && window.exportSettings && window.sync && window.motionData && window.lensProfile && window.advanced && (pendingOpenFile.toString() || pendingOpenFiles.length)) {
             pendingFileLoadTimer.start();
         }
         tabs.updateHeights();
@@ -132,6 +135,19 @@ Rectangle {
             if (pendingOpenFile.toString()) {
                 videoArea.loadFile(pendingOpenFile);
                 pendingOpenFile = "";
+            }
+            if (pendingOpenFiles.length) {
+                if (addToQueueOnStart) {
+                    // The render queue loads on its own
+                    if (!videoArea.queue) { restart(); return; }
+                    // Rendered next to the original files, as the command line does
+                    videoArea.queue.dt.add("", pendingOpenFiles);
+                    videoArea.queue.shown = true;
+                } else {
+                    // As files dropped on the window
+                    videoArea.loadMultipleFiles(pendingOpenFiles, false);
+                }
+                pendingOpenFiles = [];
             }
         }
     }
@@ -300,7 +316,7 @@ Rectangle {
                                 ]);
                                 return;
                             }
-                            if (fname.endsWith('.braw') || fname.endsWith('.dng')) {
+                            if (fname.endsWith('.braw') || fname.endsWith('.crm') || fname.endsWith('.dng')) {
                                 messageBox(Modal.Info, qsTr("This format is not available for rendering.\nThe recommended workflow is to export project file and use one of [video editor plugins] (%1).").replace(/\[(.*?)\]/, '<a href="https://gyroflow.xyz/download#plugins"><font color="' + styleTextColor + '">$1</font></a>').arg("DaVinci Resolve, Adobe Premiere/Ae, Final Cut Pro"), [
                                     { text: qsTr("Ok"), accent: true }
                                 ]);

@@ -82,6 +82,14 @@ fn main() {
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
+    if target_os == "linux" {
+        // Export the FcPatternGetCharSet override from src/linux_fontconfig.rs so Qt's calls bind to it.
+        // --dynamic-list rather than --export-dynamic-symbol: the release build's ld (binutils 2.31) predates the latter.
+        let list = Path::new(&env::var("OUT_DIR").unwrap()).join("exported_symbols.list");
+        std::fs::write(&list, "{ FcPatternGetCharSet; };\n").unwrap();
+        println!("cargo:rustc-link-arg-bins=-Wl,--dynamic-list={}", list.display());
+    }
+
     if let Ok(out_dir) = env::var("OUT_DIR") {
         println!("cargo::rustc-check-cfg=cfg(compiled_qml)");
         if out_dir.contains("\\deploy\\build\\") || out_dir.contains("/deploy/build/") || target_os == "android" || target_os == "ios" {
@@ -173,6 +181,7 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=OpenGL");
         println!("cargo:rustc-link-lib=framework=CFNetwork");
         println!("cargo:rustc-link-lib=framework=Security");
+        println!("cargo:rustc-link-arg=-Wl,-weak-lcurl");
     }
 
     let mut public_include = |name| {
@@ -240,8 +249,9 @@ fn main() {
             res.set_icon("resources/app_icon.ico");
             res.set("FileVersion", env!("CARGO_PKG_VERSION"));
             res.set("ProductVersion", env!("CARGO_PKG_VERSION"));
-            res.set("ProductName", "Gryoflow (Omni)");
-            res.set("FileDescription", &format!("Gryoflow (Omni) v{}", env!("CARGO_PKG_VERSION")));
+            res.set("ProductName", "Gyroflow (Omni)");
+            res.set("CompanyName", "Gyroflow");
+            res.set("FileDescription", &format!("Gyroflow (Omni) v{}", env!("CARGO_PKG_VERSION")));
             res.compile().unwrap();
         }
         tos => panic!("unknown target os {:?}!", tos)

@@ -2,6 +2,8 @@ import 'common.just'
 
 NameSuffix := if Arch == "aarch64" { "windows-arm64" } else { "windows64" }
 
+export MDK_SDK := MdkSdk
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Dependencies ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -88,6 +90,25 @@ install-deps:
         del "llvm.exe"
     }
     # ――――――――――――――――――――――――――――――――――――――― LLVM ――――――――――――――――――――――――――――――――――――――――
+
+    # MDK SDK and the CRM plugin built against it
+    just -f "{{justfile()}}" mdk
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# Fetch the current MDK nightly into ext/mdk-sdk and build the CRM plugin against it (see common.just)
+[no-cd]
+mdk *param:
+    #!powershell
+    $ErrorActionPreference = 'Stop'
+    $Python = "python"
+    foreach ($p in @("python3.10.exe", "python3.exe", "python.exe")) {
+        if (Get-Command $p -ErrorAction SilentlyContinue) { $Python = $p; break }
+    }
+    if (Test-Path -Path "{{ExtDir}}\WPy64-310100b3\python-3.10.10.amd64\python.exe") {
+        if (-not (Get-Command $Python -ErrorAction SilentlyContinue)) { $Python = "{{ExtDir}}\WPy64-310100b3\python-3.10.10.amd64\python.exe" }
+    }
+    & $Python "{{ProjectDir}}\_scripts\mdk.py" --os windows --arch {{Arch}} --ext "{{ExtDir}}" --crm-rev {{MdkCrmRev}} {{param}}
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Development ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -248,13 +269,17 @@ deploy:
     xcopy /Y "$OpenCVDir\opencv_flan*.dll"       "$TargetDir\"
     xcopy /Y "$OpenCVDir\opencv_imgpro*.dll"     "$TargetDir\"
     xcopy /Y "$OpenCVDir\opencv_vide*.dll"       "$TargetDir\"
-    xcopy /Y "$OpenCVDir\z.dll"                  "$TargetDir\"
+    # zlib, which opencv_core loads: vcpkg has named it zlib1.dll, z.dll and libz.dll over time
+    $zlib = Get-ChildItem "$OpenCVDir\*" -Include zlib1.dll, z.dll, libz.dll
+    if (!$zlib) { throw "No zlib DLL found in $OpenCVDir" }
+    $zlib | Copy-Item -Destination "$TargetDir\"
     del "$TargetDir\opencv_*videoio*"
 
     # Copy Gyroflow
     xcopy /Y "$CargoTarget\mdk.dll"                                      "$TargetDir\"
     xcopy /Y "$CargoTarget\mdk-braw.dll"                                 "$TargetDir\"
     xcopy /Y "$CargoTarget\mdk-r3d.dll"                                  "$TargetDir\"
+    if (Test-Path "$CargoTarget\mdk-crm.dll") { xcopy /Y "$CargoTarget\mdk-crm.dll" "$TargetDir\" }
     echo F | xcopy /Y "$CargoTarget\gyroflow.exe"                        "$TargetDir\Gyroflow.exe"
     xcopy /Y "$ProjectDir\_deployment\windows\Gyroflow_with_console.bat" "$TargetDir\"
     # xcopy /Y /E "$ProjectDir\resources\camera_presets\*"                 "$TargetDir\camera_presets\"
@@ -306,7 +331,7 @@ bundle:
         Invoke-Environment "$VSPath\VC\Auxiliary\Build\vcvars64.bat"
     }
 
-    # Bundle BRAW and RED SDK
+    # Bundle BRAW, RED and Canon SDK
     if ("{{Arch}}" -eq "aarch64") {
         $RedSdk  = "RED_SDK_Windows_arm64_9.2.1.tar.gz"
         $RedDll  = "REDR3D-a64.dll"
@@ -327,6 +352,13 @@ bundle:
             7z x tmp.tar.gz
             7z x -o"$TargetDir\" tmp.tar
             Remove-Item -Path tmp.ta* -Force
+    }
+    # Canon has no ARM64 SDK
+    if ("{{Arch}}" -ne "aarch64" -and -not (Test-Path -Path "$TargetDir\CrmSdk.dll")) {
+        Invoke-WebRequest -URI "https://api.gyroflow.xyz/sdk/Canon_CRM_SDK_Windows_2.10.0.tar.gz" -OutFile tmp.tar.gz
+        7z x tmp.tar.gz
+        7z x -o"$TargetDir\" tmp.tar
+        Remove-Item -Path tmp.ta* -Force
     }
 
     # Generate self-signed key

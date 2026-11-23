@@ -18,6 +18,8 @@ pub mod external_sdk;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub mod nle_plugins;
 mod cli;
+#[cfg(target_os = "linux")]
+mod linux_fontconfig;
 mod resources;
 #[cfg(not(compiled_qml))]
 mod resources_qml;
@@ -80,7 +82,9 @@ fn entry() {
 
     let mut open_file = String::new();
     let mut open_preset = String::new();
-    if cli::run(&mut open_file, &mut open_preset) {
+    let mut open_files = Vec::new();
+    let mut add_to_queue = false;
+    if cli::run(&mut open_file, &mut open_preset, &mut open_files, &mut add_to_queue) {
         return;
     }
 
@@ -148,10 +152,12 @@ fn entry() {
     if cfg!(target_os = "ios") {
         MDKVideoItem::setGlobalOption("plugins", "mdk-braw");
     } else if !cfg!(target_os = "android") {
-        let plugins = "mdk-braw:mdk-r3d";
+        let plugins = "mdk-braw:mdk-r3d:mdk-crm";
         #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-        let plugins = if external_sdk::xocn::enabled() { "mdk-braw:mdk-r3d:mdk-xocn" } else { plugins };
+        let plugins = if external_sdk::xocn::enabled() { "mdk-braw:mdk-r3d:mdk-crm:mdk-xocn" } else { plugins };
         MDKVideoItem::setGlobalOption("plugins", plugins);
+        // Where external_sdk installs the Canon SDK (with CanonLUTs) for mdk-crm
+        MDKVideoItem::setGlobalOption("CRMSDK_DIR", &sdk_path);
     }
     if cfg!(target_os = "linux") {
         // Init wgpu before Qt because of a bug in `khronos-egl`
@@ -254,6 +260,8 @@ fn entry() {
 
     engine.set_property("openFileOnStart".into(), QUrl::from(QString::from(gyroflow_core::filesystem::path_to_url(&open_file))).into());
     engine.set_property("loadPresetOnStart".into(), QString::from(open_preset).into());
+    engine.set_property("openFilesOnStart".into(), QVariantList::from_iter(open_files.iter().map(|x| QUrl::from(QString::from(gyroflow_core::filesystem::path_to_url(x))))).into());
+    engine.set_property("addToQueueOnStart".into(), add_to_queue.into());
 
     engine.set_property("defaultInitializedDevice".into(), QString::default().into());
     if let Some((name, list_name)) = core::gpu::initialize_contexts() {

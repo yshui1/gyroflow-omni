@@ -118,7 +118,7 @@ build prerequisites.
 - [x] XTRA (Edge, Edge Pro)
 - [x] Blackmagic RAW (*.braw)
 - [x] RED RAW (V-Raptor, KOMODO) (*.r3d)
-- [x] Canon (C50, C80, C400, R6 Mk3, R5 Mk2) (*.mp4, *.mov, *.mxf)
+- [x] Canon (C50, C80, C400, R6 Mk3, R5 Mk2) (*.mp4, *.mov, *.mxf, *.crm)
 - [x] Freefly (Ember)
 - [x] Betaflight blackbox (*.bfl, *.bbl, *.csv)
 - [x] ArduPilot logs (*.bin, *.log)

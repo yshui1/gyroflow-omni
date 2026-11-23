@@ -1,7 +1,7 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 PathSep := if os() == "windows" { ";" } else { ":" }
 
-ProjectVersion := "1.7.0"
+ProjectVersion := "1.7.1"
 ProjectDir := if path_exists(justfile_directory() / "Cargo.toml") == "true" { justfile_directory()
        } else if path_exists(justfile_directory() / ".." / "Cargo.toml") == "true" { justfile_directory() / "../"
        } else { justfile_directory() }
@@ -20,10 +20,10 @@ export QMAKE := env_var_or_default("QMAKE", if path_exists(QtPath / "qmake.bat")
 # ――――――――――――――――――――――――――――――――――――――――― Qt ――――――――――――――――――――――――――――――――――――――――――
 
 # ――――――――――――――――――――――――――――――――――――――― FFmpeg ――――――――――――――――――――――――――――――――――――――――
-FFmpeg := if os() == "windows"               { "ffmpeg-9.0-windows-desktop-vs2026-gpl-lite"
+FFmpeg := if os() == "windows"               { "ffmpeg-9.1-windows-desktop-vs2026-gpl-lite"
    } else if os() + Arch == "macosaarch64"   { "ffmpeg-arm64"
    } else if os() + Arch == "macosx86_64"    { "ffmpeg-x86_64"
-   } else                                    { "ffmpeg-9.0-linux-clang-gpl-lite" }
+   } else                                    { "ffmpeg-9.1-linux-clang-gpl-lite" }
 export FFMPEG_DIR := env_var_or_default("FFMPEG_DIR", ProjectDir / "ext" / FFmpeg)
 export FFMPEG_ARCH := if Arch == "aarch64" { "arm64" } else { if os() == "windows" { "x64" } else { "amd64" } }
 # ――――――――――――――――――――――――――――――――――――――― FFmpeg ――――――――――――――――――――――――――――――――――――――――
@@ -45,6 +45,14 @@ OpenCVPath := ProjectDir / "ext/vcpkg/installed" / VcpkgArch
 export DYLD_FALLBACK_LIBRARY_PATH := if os() == "macos" { if path_exists(`xcode-select --print-path` + "/Toolchains/XcodeDefault.xctoolchain/usr/lib/") == "true" { `xcode-select --print-path` + "/Toolchains/XcodeDefault.xctoolchain/usr/lib/" } else { `xcode-select --print-path` + "/usr/lib/" } } else { "" }
 export MACOSX_DEPLOYMENT_TARGET := "10.15"
 # ――――――――――――――――――――――――――――――――――――――― MacOS ―――――――――――――――――――――――――――――――――――――――――
+
+# ――――――――――――――――――――――――――――――――――――――― MDK ―――――――――――――――――――――――――――――――――――――――――――
+# `just mdk` (run by install-deps) fetches the MDK SDK into MdkSdk and builds the Canon CRM plugin
+# (github.com/gyroflow/mdk-crm, at MdkCrmRev) against it. MDK plugins only work with the libmdk they
+# were built against, so the desktop builds take libmdk from there too (MDK_SDK, read by qml-video-rs).
+MdkSdk := ExtDir / "mdk-sdk/"
+MdkCrmRev := "ca6d44ce958bf85114d245946c2964c1b212c11b"
+# ――――――――――――――――――――――――――――――――――――――― MDK ―――――――――――――――――――――――――――――――――――――――――――
 
 # ――――――――――――――――――――――――――――――――――――――― Clang ―――――――――――――――――――――――――――――――――――――――――
 LlvmLibDir := if os() == "linux" { `d=""; for x in $(ls -d /usr/lib/llvm-*/lib 2>/dev/null | sort -V); do v=${x#/usr/lib/llvm-}; v=${v%/lib}; [ "$v" -ge 13 ] 2>/dev/null && d=$x; done; if [ -z "$d" ]; then v=$(llvm-config --version 2>/dev/null | cut -d. -f1); [ "${v:-0}" -ge 13 ] 2>/dev/null && d=$(llvm-config --libdir 2>/dev/null); fi; echo "$d"` } else { "" }

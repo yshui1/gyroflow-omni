@@ -32,9 +32,10 @@ macro_rules! connect {
     };
 }
 
-/** Gyroflow (Omni) v1.7.0
+/** Gyroflow (Omni) v1.7.1
 Video stabilization using gyroscope data
 Exit codes: 0 - success, 1 - render failure, 2 - invalid arguments
+With input files only and no options, it does what "Default CLI behavior" in the app's Advanced settings says: renders them (the default), opens them in the app or adds them to its render queue
 */
 #[derive(FromArgs)]
 struct Opts {
@@ -139,8 +140,23 @@ struct Opts {
     version: bool,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum FilesAction { Render, Open, AddToQueue }
+
+/// What a command line with only files in it does: "Default CLI behavior" in the Advanced settings. "Open with" and files dropped
+/// on the app's icon start it so. Any option asks for the command line itself, which renders
+fn files_action() -> FilesAction {
+    if std::env::args().skip(1).any(|x| x.starts_with('-')) { return FilesAction::Render; }
+    match settings::get_u64("cliBehavior", 0) {
+        1 => FilesAction::Open,
+        2 => FilesAction::AddToQueue,
+        _ => FilesAction::Render
+    }
+}
+
 pub fn will_run_in_console() -> bool {
     if std::env::args().len() > 1 {
+        if files_action() != FilesAction::Render { return false; }
         let opts: Opts = argh::from_env();
         if let Some(open) = opts.open {
             if !open.is_empty() {
@@ -152,7 +168,9 @@ pub fn will_run_in_console() -> bool {
     false
 }
 
-pub fn run(open_file: &mut String, open_preset: &mut String) -> bool {
+/// Returns false when the app is to start instead: with `open_file` (`--open`) and `open_preset` (`--preset`), or with `open_files`,
+/// the files of a command line that has nothing else, which go to the render queue if `add_to_queue` (see `files_action`)
+pub fn run(open_file: &mut String, open_preset: &mut String, open_files: &mut Vec<String>, add_to_queue: &mut bool) -> bool {
     if std::env::args().len() > 1 {
         let opts: Opts = argh::from_env();
 
@@ -205,6 +223,14 @@ pub fn run(open_file: &mut String, open_preset: &mut String) -> bool {
                 };
                 return false;
             }
+        }
+
+        let action = files_action();
+        if action != FilesAction::Render {
+            // As they were given, like files dropped on the app's window: it finds the image sequences and what a .gyroflow file is
+            *open_files = absolute_paths;
+            *add_to_queue = action == FilesAction::AddToQueue;
+            return false;
         }
 
         for file in videos.iter().map(|(file, sequence)| sequence.as_ref().map_or(file, |x| &x.first_frame)).chain(lens_profiles.iter()) {
@@ -361,7 +387,7 @@ pub fn run(open_file: &mut String, open_preset: &mut String) -> bool {
             if let Err(e) = watch_folder(watch, |path| {
                 if !path.contains(&suffix) {
                     log::info!("New file detected: {}", path);
-                    let extensions = [ "mp4", "mov", "mxf", "mkv", "webm", "insv", "gyroflow", "png", "exr", "dng", "braw" ];
+                    let extensions = [ "mp4", "mov", "mxf", "mkv", "webm", "insv", "gyroflow", "png", "exr", "dng", "braw", "crm" ];
                     let ext = std::path::Path::new(&path).extension().map(|x| x.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
                     if extensions.contains(&ext.as_str()) {
                         let queue = unsafe { &mut *queue.as_ptr() };

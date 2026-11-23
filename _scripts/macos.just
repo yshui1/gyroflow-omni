@@ -27,6 +27,7 @@ export CFLAGS_aarch64_apple_darwin   := "-Wno-error=implicit-function-declaratio
 export CXXFLAGS_x86_64_apple_darwin := "-Wno-error=implicit-function-declaration"
 export CFLAGS_x86_64_apple_darwin   := "-Wno-error=implicit-function-declaration"
 export RUST_MIN_STACK := "33554432"
+export MDK_SDK := MdkSdk
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Dependencies ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -37,7 +38,7 @@ install-deps:
     #!/bin/bash
     set -e
 
-    brew install p7zip pkg-config flatbuffers
+    brew install p7zip pkg-config flatbuffers cmake
     brew list python &>/dev/null || brew install python
     xcode-select --install || true
 
@@ -71,13 +72,13 @@ install-deps:
         echo "Downloading ffmpeg"
 
         # Download and extract ffmpeg
-        curl -L https://sourceforge.net/projects/avbuild/files/macOS/ffmpeg-9.0-macOS-gpl-lite.tar.xz/download -o ffmpeg.tar.xz
+        curl -L https://sourceforge.net/projects/avbuild/files/macOS/ffmpeg-9.1-macOS-gpl-lite.tar.xz/download -o ffmpeg.tar.xz
         7z x -aoa ffmpeg.tar.xz
         tar -xf ffmpeg.tar
         rm ffmpeg.tar ffmpeg.tar.xz
         mkdir -p ffmpeg-x86_64/lib
         mkdir -p ffmpeg-arm64/lib
-        cd ffmpeg-9.0-macOS-gpl-lite
+        cd ffmpeg-9.1-macOS-gpl-lite
         lipo lib/libavcodec.a    -thin x86_64 -output ../ffmpeg-x86_64/lib/libavcodec.a
         lipo lib/libavformat.a   -thin x86_64 -output ../ffmpeg-x86_64/lib/libavformat.a
         lipo lib/libavdevice.a   -thin x86_64 -output ../ffmpeg-x86_64/lib/libavdevice.a
@@ -100,6 +101,17 @@ install-deps:
         cp -R include ../ffmpeg-x86_64/include
         cp -R include ../ffmpeg-arm64/include
     fi
+
+    # MDK SDK and the CRM plugin built against it
+    just -f "{{justfile()}}" mdk
+
+# Fetch the current MDK nightly into ext/mdk-sdk and build the CRM plugin against it (see common.just).
+# The plugin goes into mdk.framework beside MDK's own, so it ships and is signed with it.
+[no-cd]
+mdk *param:
+    #!/bin/bash
+    set -e
+    python3 "{{ProjectDir}}/_scripts/mdk.py" --os macos --ext "{{ExtDir}}" --crm-rev {{MdkCrmRev}} {{param}}
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Development ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -385,7 +397,7 @@ bundle *param:
     PlistBuddy -x -c "Add :DTXcode string `defaults read $(xcode-select -p)/../info DTXcode`" {{AppBundle}}/Contents/Info.plist
     PlistBuddy -x -c "Add :DTXcodeBuild string `xcodebuild -version | grep 'Build version' | sed 's/^Build version //'`" {{AppBundle}}/Contents/Info.plist
 
-    # Bundle BRAW and RED SDK
+    # Bundle BRAW, RED and Canon SDK
     FrameworksDir={{AppBundle}}/Contents/Frameworks
     if [ ! -f "$FrameworksDir/REDR3D.dylib" ]; then
         curl -L https://api.gyroflow.xyz/sdk/RED_SDK_MacOS_9.2.1.tar.gz -o tmp.tar.gz
@@ -395,6 +407,12 @@ bundle *param:
     fi
     if [ ! -f "$FrameworksDir/BlackmagicRawAPI.framework/Versions/A/BlackmagicRawAPI" ]; then
         curl -L https://api.gyroflow.xyz/sdk/Blackmagic_RAW_SDK_MacOS_6.0.0.tar.gz -o tmp.tar.gz
+        7z x -aoa tmp.tar.gz
+        7z x -o"$FrameworksDir/" tmp.tar
+        rm tmp.tar tmp.tar.gz
+    fi
+    if [ ! -f "$FrameworksDir/CrmSdk.framework/Versions/A/CrmSdk" ]; then
+        curl -L https://api.gyroflow.xyz/sdk/Canon_CRM_SDK_MacOS_2.10.0.tar.gz -o tmp.tar.gz
         7z x -aoa tmp.tar.gz
         7z x -o"$FrameworksDir/" tmp.tar
         rm tmp.tar tmp.tar.gz
@@ -425,6 +443,12 @@ bundle *param:
     fi
 
     cp -f "$PROVISIONING_PROFILE" {{AppBundle}}/Contents/embedded.provisionprofile
+
+    # Canon's crxdec.framework sits in CrmSdk's Resources/, which the loop below skips: sign it first (inside-out)
+    if [ -d "{{AppBundle}}/Contents/Frameworks/CrmSdk.framework/Versions/A/Resources/crxdec.framework" ]; then
+        codesign -vvvv --strict --options runtime --timestamp --force -s $SIGN_KEY --entitlements {{AppBundle}}/../entitlements.xcent \
+            {{AppBundle}}/Contents/Frameworks/CrmSdk.framework/Versions/A/Resources/crxdec.framework/Versions/A/crxdec
+    fi
 
     find {{AppBundle}}/Contents \( -name "*.dylib" -or -path "*/Versions/A/*" \) -and ! \( \
         -path "*/Headers/*" -or -path "*/A/Resources/*" -or -name "CodeResources" -or -name "module.modulemap" \) -type f | sort | xargs -r \

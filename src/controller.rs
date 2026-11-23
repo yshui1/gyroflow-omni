@@ -440,6 +440,9 @@ impl Controller {
         if filename.to_ascii_lowercase().ends_with("r3d") || filename.to_ascii_lowercase().ends_with("nev") {
             custom_decoder = core::raw_video::red_decoder(self.stabilizer.gpu_decoding.load(SeqCst), &options);
         }
+        if filename.to_ascii_lowercase().ends_with("crm") {
+            custom_decoder = format!("CRM:gpu=auto{}", options); // The Canon SDK develops on the GPU only
+        }
         // Give MDK's X-OCN reader its own suffix so regular MXF files still use FFmpeg.
         self.source_video_size = None;
         #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
@@ -3582,7 +3585,7 @@ impl Filesystem {
         let folder = filesystem::get_folder(&current_url);
         let filename = filesystem::get_filename(&current_url);
 
-        let extensions = [ "mp4", "mov", "mxf", "mkv", "webm", "insv", "braw", "r3d", "nev" ];
+        let extensions = [ "mp4", "mov", "mxf", "mkv", "webm", "insv", "braw", "r3d", "nev", "crm" ];
 
         let list: Vec<(String, String)> = filesystem::list_folder(&folder)
             .into_iter()
