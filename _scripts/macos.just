@@ -357,9 +357,15 @@ deploy *param:
 
             for i in 1 2 3 4 5 6 7 8 9 10
             do
-                sudo mdutil -a -i off
-                sudo pkill -9 XProtect >/dev/null || true
-                while pgrep XProtect; do sleep 3; done;
+                # On CI, stop Spotlight and XProtect from holding the files hdiutil needs. Locally that would
+                # change system settings and ask for a password, so only retry there.
+                if [ -n "$CI" ]; then
+                    sudo mdutil -a -i off
+                    sudo pkill -9 XProtect >/dev/null || true
+                    while pgrep XProtect; do sleep 3; done;
+                elif [ $i -gt 1 ]; then
+                    sleep 5
+                fi
 
                 hdiutil create "$PROJECT_DIR/_deployment/_binaries/Gyroflow-mac-universal.dmg" -volname "Gyroflow v{{ProjectVersion}}" -fs HFS+ -srcfolder "$PROJECT_DIR/_deployment/_binaries/mac/" -ov -format UDZO -imagekey zlib-level=9 || true
 
