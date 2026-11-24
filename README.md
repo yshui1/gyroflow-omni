@@ -9,7 +9,9 @@
   </h1>
 
   <p align="center">
-    Video stabilization using gyroscope data
+    Gyroflow Omni: a custom version of Gyroflow with improved anamorphic support, broader camera compatibility and user experience enhancements.
+    <br/>
+    Support me at <a href="https://www.omnicinecontrol.com">www.omnicinecontrol.com</a>, a universal camera monitor and control app for iOS and Android.
     <br/>
     <br/>
     <a href="https://gyroflow.xyz">Homepage</a> •
